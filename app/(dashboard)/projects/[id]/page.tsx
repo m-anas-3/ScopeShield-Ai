@@ -4,7 +4,7 @@ import { ClipboardCheck, FileText, MessageSquareText } from "lucide-react";
 
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/server";
-import type { Project, ProjectStatus } from "@/types";
+import type { Project, ProjectStatus, RiskLevel, ScopeStatus } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,6 +17,7 @@ import {
 import {
   Table,
   TableBody,
+  TableCell,
   TableHead,
   TableHeader,
   TableRow,
@@ -27,6 +28,74 @@ interface ProjectDetailPageProps {
   params: {
     id: string;
   };
+}
+
+interface ProjectCheck {
+  id: string;
+  clientRequest: string;
+  scopeStatus: ScopeStatus | null;
+  riskLevel: RiskLevel | null;
+  estimatedHoursMin: number | null;
+  estimatedHoursMax: number | null;
+  createdAt: string;
+}
+
+function truncate(value: string, maxLength: number) {
+  if (value.length <= maxLength) {
+    return value;
+  }
+
+  return `${value.slice(0, maxLength - 1)}…`;
+}
+
+function scopeStatusLabel(status: ScopeStatus | null) {
+  switch (status) {
+    case "in_scope":
+      return "In Scope";
+    case "out_of_scope":
+      return "Out of Scope";
+    case "needs_clarification":
+      return "Needs Clarification";
+    default:
+      return "Unknown";
+  }
+}
+
+function scopeStatusClassName(status: ScopeStatus | null) {
+  switch (status) {
+    case "in_scope":
+      return "border-green-200 bg-green-50 text-green-700";
+    case "out_of_scope":
+      return "border-red-200 bg-red-50 text-red-700";
+    case "needs_clarification":
+      return "border-yellow-200 bg-yellow-50 text-yellow-700";
+    default:
+      return "border-gray-200 bg-gray-50 text-gray-700";
+  }
+}
+
+function riskClassName(risk: RiskLevel | null) {
+  switch (risk) {
+    case "low":
+      return "border-blue-200 bg-blue-50 text-blue-700";
+    case "medium":
+      return "border-orange-200 bg-orange-50 text-orange-700";
+    case "high":
+      return "border-red-200 bg-red-50 text-red-700";
+    default:
+      return "border-gray-200 bg-gray-50 text-gray-700";
+  }
+}
+
+function hoursLabel(check: ProjectCheck) {
+  const min = check.estimatedHoursMin ?? 0;
+  const max = check.estimatedHoursMax ?? 0;
+
+  if (min === 0 && max === 0) {
+    return "No extra work";
+  }
+
+  return `${min}–${max} hrs`;
 }
 
 async function getProject(projectId: string): Promise<Project | null> {
@@ -76,6 +145,53 @@ async function getProject(projectId: string): Promise<Project | null> {
   }
 }
 
+async function getProjectChecks(projectId: string): Promise<ProjectCheck[]> {
+  try {
+    const supabase = createClient();
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      return [];
+    }
+
+    const { data, error } = await supabase
+      .from("scope_checks")
+      .select(
+        "id, client_request, scope_status, risk_level, estimated_hours_min, estimated_hours_max, created_at",
+      )
+      .eq("project_id", projectId)
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false });
+
+    if (error || !data) {
+      console.error("Project checks lookup failed", error);
+      return [];
+    }
+
+    return data.map((check) => ({
+      id: String(check.id),
+      clientRequest: String(check.client_request),
+      scopeStatus: (check.scope_status ?? null) as ScopeStatus | null,
+      riskLevel: (check.risk_level ?? null) as RiskLevel | null,
+      estimatedHoursMin:
+        check.estimated_hours_min === null
+          ? null
+          : Number(check.estimated_hours_min),
+      estimatedHoursMax:
+        check.estimated_hours_max === null
+          ? null
+          : Number(check.estimated_hours_max),
+      createdAt: String(check.created_at),
+    }));
+  } catch (error) {
+    console.error("Project checks lookup failed", error);
+    return [];
+  }
+}
+
 function ScopeCard({
   title,
   value,
@@ -105,6 +221,8 @@ export default async function ProjectDetailPage({
   if (!project) {
     notFound();
   }
+
+  const checks = await getProjectChecks(params.id);
 
   return (
     <div className="space-y-6">
@@ -171,30 +289,67 @@ export default async function ProjectDetailPage({
             <CardTitle>Scope Checks</CardTitle>
           </div>
           <CardDescription>
-            Checks for this project will be listed after Part 2 is built.
+            Saved scope checks for this project.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Request</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Risk</TableHead>
-                <TableHead>Date</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody />
-          </Table>
-          <div className="mt-4">
+          {checks.length > 0 ? (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Request</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Risk</TableHead>
+                  <TableHead>Hours</TableHead>
+                  <TableHead>Date</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {checks.map((check) => (
+                  <TableRow key={check.id} className="hover:bg-transparent">
+                    <TableCell colSpan={5} className="p-0">
+                      <Link
+                        href={`/checks/${check.id}`}
+                        className="grid gap-3 px-4 py-3 text-sm transition-colors hover:bg-slate-50 lg:grid-cols-[1.4fr_150px_110px_120px_120px] lg:items-center"
+                      >
+                        <span className="text-slate-950">
+                          {truncate(check.clientRequest, 70)}
+                        </span>
+                        <span>
+                          <Badge
+                            className={scopeStatusClassName(check.scopeStatus)}
+                          >
+                            {scopeStatusLabel(check.scopeStatus)}
+                          </Badge>
+                        </span>
+                        <span>
+                          <Badge
+                            className={`capitalize ${riskClassName(check.riskLevel)}`}
+                          >
+                            {check.riskLevel ?? "unknown"}
+                          </Badge>
+                        </span>
+                        <span className="text-muted-foreground">
+                          {hoursLabel(check)}
+                        </span>
+                        <span className="text-muted-foreground">
+                          {formatDate(check.createdAt)}
+                        </span>
+                      </Link>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
             <EmptyState
               icon={<FileText className="h-6 w-6" />}
               title="No checks for this project"
-              description="Part 2 will add the AI check flow and save results here."
-              actionLabel="Run Scope Check"
+              description="Run a scope check to compare a client request against the saved project scope."
+              actionLabel="Run First Check"
               actionHref={`/projects/${project.id}/check`}
             />
-          </div>
+          )}
         </CardContent>
       </Card>
     </div>
