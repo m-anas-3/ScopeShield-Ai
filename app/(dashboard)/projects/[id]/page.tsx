@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 import type { Project, ProjectStatus, RiskLevel, ScopeStatus } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ProjectActions } from "@/components/projects/ProjectActions";
 import {
   Card,
   CardContent,
@@ -113,7 +114,7 @@ async function getProject(projectId: string): Promise<Project | null> {
     const { data, error } = await supabase
       .from("projects")
       .select(
-        "id, user_id, name, client_name, original_scope, deliverables, exclusions, revision_limit, hourly_rate, status, created_at, updated_at",
+        "id, user_id, name, client_name, original_scope, deliverables, exclusions, revision_limit, hourly_rate, status, scope_locked, locked_at, scope_embedding_model, scope_chunks_count, created_at, updated_at",
       )
       .eq("id", projectId)
       .eq("user_id", user.id)
@@ -136,6 +137,12 @@ async function getProject(projectId: string): Promise<Project | null> {
         data.revision_limit === null ? null : Number(data.revision_limit),
       hourly_rate: data.hourly_rate === null ? null : Number(data.hourly_rate),
       status: (data.status ?? "active") as ProjectStatus,
+      scope_locked: Boolean(data.scope_locked),
+      locked_at: data.locked_at ? String(data.locked_at) : null,
+      scope_embedding_model: data.scope_embedding_model
+        ? String(data.scope_embedding_model)
+        : null,
+      scope_chunks_count: Number(data.scope_chunks_count ?? 0),
       created_at: String(data.created_at),
       updated_at: String(data.updated_at),
     };
@@ -241,12 +248,25 @@ export default async function ProjectDetailPage({
             {project.client_name ?? "No client name set"}
           </p>
         </div>
-        <Button asChild>
-          <Link href={`/projects/${project.id}/check`}>
-            <MessageSquareText />
-            Run Scope Check
-          </Link>
-        </Button>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <ProjectActions
+            projectId={project.id}
+            isLocked={project.scope_locked}
+          />
+          {project.scope_locked ? (
+            <Button asChild>
+              <Link href={`/projects/${project.id}/check`}>
+                <MessageSquareText />
+                Run Scope Check
+              </Link>
+            </Button>
+          ) : (
+            <Button type="button" disabled>
+              <MessageSquareText />
+              Run Scope Check
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="grid gap-5 lg:grid-cols-[1.4fr_0.6fr]">
@@ -272,6 +292,25 @@ export default async function ProjectDetailPage({
             <div className="flex items-center justify-between gap-4">
               <span className="text-muted-foreground">Status</span>
               <Badge variant={project.status}>{project.status}</Badge>
+            </div>
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-muted-foreground">Scope lock</span>
+              <Badge
+                variant="outline"
+                className={
+                  project.scope_locked
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                    : "border-amber-200 bg-amber-50 text-amber-700"
+                }
+              >
+                {project.scope_locked ? "Locked" : "Draft"}
+              </Badge>
+            </div>
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-muted-foreground">RAG chunks</span>
+              <span className="font-medium text-slate-950">
+                {project.scope_chunks_count}
+              </span>
             </div>
           </CardContent>
         </Card>

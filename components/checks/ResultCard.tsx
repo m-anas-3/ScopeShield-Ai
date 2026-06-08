@@ -95,10 +95,19 @@ function extraHours(check: ScopeCheck) {
   return `${min}–${max} hrs`;
 }
 
+function sourceLabel(value: string) {
+  return value
+    .split("_")
+    .filter(Boolean)
+    .map((part) => `${part[0]?.toUpperCase() ?? ""}${part.slice(1)}`)
+    .join(" ");
+}
+
 export function ResultCard({ check }: ResultCardProps) {
   const verdict = statusMeta(check.scope_status);
   const professionalReply = check.professional_reply ?? "";
   const changeRequestSummary = check.change_request_summary ?? "";
+  const matchedClauses = check.matched_clauses ?? [];
 
   return (
     <div className="space-y-6">
@@ -156,6 +165,43 @@ export function ResultCard({ check }: ResultCardProps) {
           </p>
         </CardContent>
       </Card>
+
+      {matchedClauses.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Matched Scope Clauses</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {matchedClauses.map((clause) => {
+              const usedByAI = check.matched_clause_ids.includes(clause.id);
+
+              return (
+                <div
+                  key={clause.id}
+                  className="rounded-lg border border-gray-200 bg-gray-50 p-4"
+                >
+                  <div className="mb-2 flex flex-wrap items-center gap-2">
+                    <Badge variant="secondary">
+                      {sourceLabel(clause.source_field)}
+                    </Badge>
+                    <Badge variant="outline">
+                      {Math.round(clause.similarity * 100)}% match
+                    </Badge>
+                    {usedByAI ? (
+                      <Badge className="border-emerald-200 bg-emerald-50 text-emerald-700">
+                        Referenced
+                      </Badge>
+                    ) : null}
+                  </div>
+                  <p className="whitespace-pre-wrap text-sm leading-6 text-slate-700">
+                    {clause.chunk_text}
+                  </p>
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Card>
         <CardHeader>

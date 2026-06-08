@@ -21,6 +21,8 @@ interface ProjectSummary {
   id: string;
   name: string;
   client_name: string | null;
+  scope_locked: boolean;
+  scope_chunks_count: number;
 }
 
 async function getProject(projectId: string): Promise<ProjectSummary | null> {
@@ -37,7 +39,7 @@ async function getProject(projectId: string): Promise<ProjectSummary | null> {
 
     const { data, error } = await supabase
       .from("projects")
-      .select("id, user_id, name, client_name")
+      .select("id, user_id, name, client_name, scope_locked, scope_chunks_count")
       .eq("id", projectId)
       .eq("user_id", user.id)
       .single();
@@ -51,6 +53,8 @@ async function getProject(projectId: string): Promise<ProjectSummary | null> {
       id: String(data.id),
       name: String(data.name),
       client_name: data.client_name ? String(data.client_name) : null,
+      scope_locked: Boolean(data.scope_locked),
+      scope_chunks_count: Number(data.scope_chunks_count ?? 0),
     };
   } catch (error) {
     console.error("Project check lookup failed", error);
@@ -65,6 +69,10 @@ export default async function ProjectCheckPage({
 
   if (!project) {
     redirect("/projects");
+  }
+
+  if (!project.scope_locked || project.scope_chunks_count === 0) {
+    redirect(`/projects/${project.id}`);
   }
 
   return (

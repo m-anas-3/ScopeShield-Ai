@@ -19,7 +19,19 @@ export function ProjectCard({ project }: { project: Project }) {
         <CardHeader className="space-y-3">
           <div className="flex items-start justify-between gap-3">
             <CardTitle className="line-clamp-2">{project.name}</CardTitle>
-            <Badge variant={project.status}>{project.status}</Badge>
+            <div className="flex flex-col items-end gap-2">
+              <Badge variant={project.status}>{project.status}</Badge>
+              <Badge
+                variant="outline"
+                className={
+                  project.scope_locked
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                    : "border-amber-200 bg-amber-50 text-amber-700"
+                }
+              >
+                {project.scope_locked ? "Locked" : "Draft"}
+              </Badge>
+            </div>
           </div>
           <CardDescription className="flex items-center gap-2">
             <UserRound className="h-4 w-4" />
@@ -32,7 +44,9 @@ export function ProjectCard({ project }: { project: Project }) {
           </p>
           <div className="mt-5 flex items-center gap-2 text-xs text-muted-foreground">
             <CalendarDays className="h-4 w-4" />
-            Created {formatDate(project.created_at)}
+            {project.scope_locked && project.locked_at
+              ? `Locked ${formatDate(project.locked_at)}`
+              : `Created ${formatDate(project.created_at)}`}
           </div>
         </CardContent>
       </Card>

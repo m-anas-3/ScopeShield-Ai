@@ -22,7 +22,7 @@ async function getProjects(): Promise<Project[]> {
     const { data, error } = await supabase
       .from("projects")
       .select(
-        "id, user_id, name, client_name, original_scope, deliverables, exclusions, revision_limit, hourly_rate, status, created_at, updated_at",
+        "id, user_id, name, client_name, original_scope, deliverables, exclusions, revision_limit, hourly_rate, status, scope_locked, locked_at, scope_embedding_model, scope_chunks_count, created_at, updated_at",
       )
       .eq("user_id", user.id)
       .order("created_at", { ascending: false });
@@ -45,6 +45,12 @@ async function getProjects(): Promise<Project[]> {
       hourly_rate:
         project.hourly_rate === null ? null : Number(project.hourly_rate),
       status: (project.status ?? "active") as ProjectStatus,
+      scope_locked: Boolean(project.scope_locked),
+      locked_at: project.locked_at ? String(project.locked_at) : null,
+      scope_embedding_model: project.scope_embedding_model
+        ? String(project.scope_embedding_model)
+        : null,
+      scope_chunks_count: Number(project.scope_chunks_count ?? 0),
       created_at: String(project.created_at),
       updated_at: String(project.updated_at),
     }));

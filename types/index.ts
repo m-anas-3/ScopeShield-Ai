@@ -24,8 +24,19 @@ export interface Project {
   revision_limit: number | null;
   hourly_rate: number | null;
   status: ProjectStatus;
+  scope_locked: boolean;
+  locked_at: string | null;
+  scope_embedding_model: string | null;
+  scope_chunks_count: number;
   created_at: string;
   updated_at: string;
+}
+
+export interface MatchedClause {
+  id: string;
+  source_field: string;
+  chunk_text: string;
+  similarity: number;
 }
 
 export interface ScopeCheck {
@@ -44,6 +55,8 @@ export interface ScopeCheck {
   suggested_action: string | null;
   professional_reply: string | null;
   change_request_summary: string | null;
+  matched_clauses: MatchedClause[];
+  matched_clause_ids: string[];
   tokens_input: number | null;
   tokens_output: number | null;
   credits_used: number;
@@ -59,4 +72,5 @@ export interface AIAnalysisResult {
   suggested_action: string;
   professional_reply: string;
   change_request_summary: string;
+  matched_clause_ids: string[];
 }

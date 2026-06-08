@@ -2,13 +2,59 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
-import type { RiskLevel, ScopeCheck, ScopeStatus } from "@/types";
+import type { MatchedClause, RiskLevel, ScopeCheck, ScopeStatus } from "@/types";
 import { ResultCard } from "@/components/checks/ResultCard";
 
 interface CheckResultPageProps {
   params: {
     id: string;
   };
+}
+
+function parseMatchedClauses(value: unknown): MatchedClause[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+
+      const record = item as Record<string, unknown>;
+      const id = record.id;
+      const sourceField = record.source_field;
+      const chunkText = record.chunk_text;
+      const similarity = record.similarity;
+
+      if (
+        typeof id !== "string" ||
+        typeof sourceField !== "string" ||
+        typeof chunkText !== "string"
+      ) {
+        return null;
+      }
+
+      return {
+        id,
+        source_field: sourceField,
+        chunk_text: chunkText,
+        similarity:
+          typeof similarity === "number" && Number.isFinite(similarity)
+            ? similarity
+            : 0,
+      };
+    })
+    .filter((item): item is MatchedClause => item !== null);
+}
+
+function parseStringArray(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter((item): item is string => typeof item === "string");
 }
 
 async function getScopeCheck(checkId: string): Promise<ScopeCheck | null> {
@@ -26,7 +72,7 @@ async function getScopeCheck(checkId: string): Promise<ScopeCheck | null> {
     const { data, error } = await supabase
       .from("scope_checks")
       .select(
-        "id, user_id, project_id, client_request, urgency, client_tone, extra_notes, scope_status, risk_level, estimated_hours_min, estimated_hours_max, ai_reason, suggested_action, professional_reply, change_request_summary, tokens_input, tokens_output, credits_used, created_at",
+        "id, user_id, project_id, client_request, urgency, client_tone, extra_notes, scope_status, risk_level, estimated_hours_min, estimated_hours_max, ai_reason, suggested_action, professional_reply, change_request_summary, matched_clauses, matched_clause_ids, tokens_input, tokens_output, credits_used, created_at",
       )
       .eq("id", checkId)
       .single();
@@ -64,6 +110,8 @@ async function getScopeCheck(checkId: string): Promise<ScopeCheck | null> {
       change_request_summary: data.change_request_summary
         ? String(data.change_request_summary)
         : null,
+      matched_clauses: parseMatchedClauses(data.matched_clauses),
+      matched_clause_ids: parseStringArray(data.matched_clause_ids),
       tokens_input: data.tokens_input === null ? null : Number(data.tokens_input),
       tokens_output:
         data.tokens_output === null ? null : Number(data.tokens_output),

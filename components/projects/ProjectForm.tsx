@@ -7,7 +7,10 @@ import { Save } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 
-import { createProjectAction } from "@/lib/actions/projects";
+import {
+  createProjectAction,
+  updateProjectAction,
+} from "@/lib/actions/projects";
 import {
   projectSchema,
   type ProjectFormValues,
@@ -32,32 +35,47 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
-export function ProjectForm() {
+interface ProjectFormProps {
+  mode?: "create" | "edit";
+  projectId?: string;
+  initialValues?: ProjectFormValues;
+}
+
+const emptyValues: ProjectFormValues = {
+  name: "",
+  client_name: "",
+  original_scope: "",
+  deliverables: "",
+  exclusions: "",
+  revision_limit: "",
+  hourly_rate: "",
+};
+
+export function ProjectForm({
+  mode = "create",
+  projectId,
+  initialValues,
+}: ProjectFormProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const form = useForm<ProjectFormValues>({
     resolver: zodResolver(projectSchema),
-    defaultValues: {
-      name: "",
-      client_name: "",
-      original_scope: "",
-      deliverables: "",
-      exclusions: "",
-      revision_limit: "",
-      hourly_rate: "",
-    },
+    defaultValues: initialValues ?? emptyValues,
   });
 
   function onSubmit(values: ProjectFormValues) {
     startTransition(async () => {
-      const result = await createProjectAction(values);
+      const result =
+        mode === "edit" && projectId
+          ? await updateProjectAction(projectId, values)
+          : await createProjectAction(values);
 
       if (!result.ok) {
         toast.error(result.error);
         return;
       }
 
-      toast.success("Project created.");
+      toast.success(mode === "edit" ? "Project updated." : "Project created.");
       router.push(`/projects/${result.projectId}`);
       router.refresh();
     });
@@ -68,7 +86,7 @@ export function ProjectForm() {
       <CardHeader>
         <CardTitle>Project Scope</CardTitle>
         <CardDescription>
-          Capture the original agreement so Part 2 can compare new requests.
+          Capture the original agreement before locking it for AI checks.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -204,7 +222,11 @@ export function ProjectForm() {
             <div className="flex justify-end">
               <Button type="submit" disabled={isPending}>
                 <Save />
-                {isPending ? "Saving..." : "Save Project"}
+                {isPending
+                  ? "Saving..."
+                  : mode === "edit"
+                    ? "Save Changes"
+                    : "Save Project"}
               </Button>
             </div>
           </form>
