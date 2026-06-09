@@ -1,31 +1,48 @@
-import { FileCheck2, MailCheck, Zap } from "lucide-react";
-
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+  Archive,
+  Coins,
+  FileSearch,
+  Gauge,
+  MailCheck,
+  ShieldCheck,
+} from "lucide-react";
 
 const features = [
   {
-    title: "Instant AI Analysis",
+    title: "Matched scope clauses",
     description:
-      "Compare a fresh client request against the original agreement in seconds.",
-    icon: Zap,
+      "Retrieves the locked clauses most relevant to the new request before analysis.",
+    icon: FileSearch,
   },
   {
-    title: "Professional Replies",
+    title: "Grounded AI verdicts",
     description:
-      "Turn uncomfortable scope conversations into calm, client-ready messages.",
+      "Classifies each ask as in scope, out of scope, or needing clarification.",
+    icon: ShieldCheck,
+  },
+  {
+    title: "Client-ready replies",
+    description:
+      "Drafts calm, professional responses for confirmations, questions, and change orders.",
     icon: MailCheck,
   },
   {
-    title: "Change Order Ready",
+    title: "Risk and hours",
     description:
-      "Capture the request, risk, and estimated effort before work starts.",
-    icon: FileCheck2,
+      "Estimates added effort and flags deadline or delivery risk before work starts.",
+    icon: Gauge,
+  },
+  {
+    title: "Project history",
+    description:
+      "Keeps every check attached to the right project for later reference.",
+    icon: Archive,
+  },
+  {
+    title: "Credit tracking",
+    description:
+      "Shows usage clearly so teams know what each AI analysis costs.",
+    icon: Coins,
   },
 ];
 
@@ -33,26 +50,34 @@ export function Features() {
   return (
     <section className="bg-white py-20">
       <div className="mx-auto max-w-6xl px-4">
-        <div className="mb-10 max-w-2xl">
-          <h2 className="text-3xl font-bold tracking-normal text-slate-950">
-            Catch the hidden work before it becomes unpaid work.
+        <div className="mb-10 max-w-3xl">
+          <p className="text-sm font-semibold uppercase tracking-normal text-[#534AB7]">
+            Product
+          </p>
+          <h2 className="mt-3 text-3xl font-bold tracking-normal text-slate-950 sm:text-4xl">
+            Built for the exact moment a client asks for one more thing.
           </h2>
+          <p className="mt-4 text-base leading-7 text-muted-foreground">
+            ScopeShield turns a vague request into evidence, a decision, and a
+            reply your client can understand.
+          </p>
         </div>
-        <div className="grid gap-5 md:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {features.map((feature) => (
-            <Card key={feature.title} className="p-0">
-              <CardHeader>
-                <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-lg bg-[#534AB7]/10 text-[#534AB7]">
-                  <feature.icon className="h-5 w-5" />
-                </div>
-                <CardTitle>{feature.title}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <CardDescription className="leading-6">
-                  {feature.description}
-                </CardDescription>
-              </CardContent>
-            </Card>
+            <div
+              key={feature.title}
+              className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm"
+            >
+              <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100 text-[#534AB7]">
+                <feature.icon className="h-5 w-5" />
+              </div>
+              <h3 className="text-base font-semibold text-slate-950">
+                {feature.title}
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                {feature.description}
+              </p>
+            </div>
           ))}
         </div>
       </div>

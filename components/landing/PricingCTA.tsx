@@ -1,37 +1,112 @@
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, CheckCircle2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 
+const plans = [
+  {
+    name: "Free",
+    price: "$0",
+    detail: "30 credits per month",
+    points: ["Create projects", "Lock scopes", "Run AI checks"],
+  },
+  {
+    name: "Pro",
+    price: "$19",
+    detail: "300 credits per month",
+    points: ["Higher check volume", "Full project history", "Reply drafts"],
+  },
+  {
+    name: "Agency",
+    price: "Custom",
+    detail: "For multi-client pipelines",
+    points: ["More credits", "Team-ready workflows", "Priority capacity"],
+  },
+];
+
 export function PricingCTA() {
   return (
-    <section className="bg-white py-20">
-      <div className="mx-auto grid max-w-6xl gap-6 px-4 lg:grid-cols-[1.2fr_0.8fr] lg:items-center">
-        <div>
-          <h2 className="text-3xl font-bold tracking-normal text-slate-950">
-            Start free. Upgrade when scope checks pay for themselves.
-          </h2>
-          <p className="mt-4 max-w-2xl text-base leading-7 text-muted-foreground">
-            Free includes 30 checks per month. Pro is $19 per month for freelancers
-            who want more room to protect bigger client pipelines.
-          </p>
-        </div>
-        <div className="rounded-xl border border-gray-200 bg-slate-50 p-6 shadow-sm">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
-            <div className="rounded-lg bg-white p-4">
-              <p className="text-sm font-medium text-muted-foreground">Free</p>
-              <p className="mt-1 text-2xl font-bold text-slate-950">30 checks/mo</p>
-            </div>
-            <div className="rounded-lg bg-white p-4">
-              <p className="text-sm font-medium text-muted-foreground">Pro</p>
-              <p className="mt-1 text-2xl font-bold text-slate-950">$19/mo</p>
-            </div>
+    <section className="border-y border-slate-200 bg-white py-20">
+      <div className="mx-auto max-w-6xl px-4">
+        <div className="mb-10 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+          <div className="max-w-3xl">
+            <p className="text-sm font-semibold uppercase tracking-normal text-[#534AB7]">
+              Pricing
+            </p>
+            <h2 className="mt-3 text-3xl font-bold tracking-normal text-slate-950 sm:text-4xl">
+              Start free, then scale when scope checks are part of every client
+              conversation.
+            </h2>
           </div>
-          <Button asChild className="mt-5 w-full">
+          <Button asChild className="bg-[#534AB7] hover:bg-[#463da2]">
             <Link href="/signup">
-              Get Started Free
+              Start free
               <ArrowRight />
             </Link>
+          </Button>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-3">
+          {plans.map((plan) => (
+            <div
+              key={plan.name}
+              className="rounded-lg border border-slate-200 bg-slate-50 p-5"
+            >
+              <p className="text-sm font-semibold text-[#534AB7]">
+                {plan.name}
+              </p>
+              <div className="mt-3 flex items-end gap-2">
+                <p className="text-4xl font-bold tracking-normal text-slate-950">
+                  {plan.price}
+                </p>
+                {plan.price !== "Custom" ? (
+                  <p className="pb-1 text-sm text-muted-foreground">/mo</p>
+                ) : null}
+              </div>
+              <p className="mt-2 text-sm text-muted-foreground">
+                {plan.detail}
+              </p>
+              <div className="mt-6 space-y-3">
+                {plan.points.map((point) => (
+                  <div key={point} className="flex items-center gap-2 text-sm">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                    <span className="text-slate-700">{point}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+export function FinalCTA() {
+  return (
+    <section className="bg-slate-950 py-20 text-white">
+      <div className="mx-auto max-w-4xl px-4 text-center">
+        <h2 className="text-3xl font-bold tracking-normal sm:text-5xl">
+          Protect the margin before the extra work begins.
+        </h2>
+        <p className="mx-auto mt-5 max-w-2xl text-base leading-7 text-white/70">
+          ScopeShield gives freelancers and agencies a clear, documented way to
+          answer client requests without relying on memory or awkward guesswork.
+        </p>
+        <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
+          <Button asChild size="lg" className="bg-white text-slate-950 hover:bg-slate-100">
+            <Link href="/signup">
+              Create free account
+              <ArrowRight />
+            </Link>
+          </Button>
+          <Button
+            asChild
+            size="lg"
+            variant="outline"
+            className="border-white/25 bg-transparent text-white hover:bg-white hover:text-slate-950"
+          >
+            <Link href="/login">Log in</Link>
           </Button>
         </div>
       </div>
