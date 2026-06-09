@@ -1,9 +1,15 @@
-import { BarChart3, Coins, CreditCard } from "lucide-react";
+import { BarChart3, Coins } from "lucide-react";
 
+import {
+  BILLING_MIGRATION_FILE,
+  isMissingBillingSchemaError,
+  stripeSetupIssues,
+} from "@/lib/billing/setup";
 import { createClient } from "@/lib/supabase/server";
+import { publicBillingOptions } from "@/lib/stripe/products";
 import type { Plan, Profile } from "@/types";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { BillingActions } from "@/components/billing/BillingActions";
 import {
   Card,
   CardContent,
@@ -42,7 +48,20 @@ interface UsageSummaryRow {
 interface UsageData {
   profile: Profile | null;
   usageRows: UsageSummaryRow[];
+  hasBillingCustomer: boolean;
+  billingSetupIssues: string[];
 }
+
+type UsageProfileRow = {
+  id: string;
+  full_name: string | null;
+  avatar_url: string | null;
+  plan: string | null;
+  credits_balance: number | null;
+  credits_reset_at: string | null;
+  stripe_customer_id?: string | null;
+  created_at: string | null;
+};
 
 function fallbackProfile(userId: string): Profile {
   const now = new Date().toISOString();
@@ -86,6 +105,13 @@ function actionLabel(action: string) {
 }
 
 async function getUsageData(): Promise<UsageData> {
+  const baseResult = {
+    profile: null,
+    usageRows: [],
+    hasBillingCustomer: false,
+    billingSetupIssues: stripeSetupIssues(),
+  } satisfies UsageData;
+
   try {
     const supabase = createClient();
     const {
@@ -94,16 +120,46 @@ async function getUsageData(): Promise<UsageData> {
     } = await supabase.auth.getUser();
 
     if (userError || !user) {
-      return { profile: null, usageRows: [] };
+      return baseResult;
     }
 
-    const { data: profileData, error: profileError } = await supabase
+    let billingSchemaReady = true;
+    let stripeCustomerId: string | null = null;
+    let profileData: UsageProfileRow | null = null;
+    let profileError: unknown = null;
+    const profileResult = await supabase
       .from("profiles")
       .select(
-        "id, full_name, avatar_url, plan, credits_balance, credits_reset_at, created_at",
+        "id, full_name, avatar_url, plan, credits_balance, credits_reset_at, stripe_customer_id, created_at",
       )
       .eq("id", user.id)
       .single();
+
+    profileData = profileResult.data as UsageProfileRow | null;
+    profileError = profileResult.error;
+
+    if (profileError && isMissingBillingSchemaError(profileError)) {
+      billingSchemaReady = false;
+      console.error(
+        `Billing schema is missing. Apply ${BILLING_MIGRATION_FILE}.`,
+      );
+
+      const fallbackProfileResult = await supabase
+        .from("profiles")
+        .select(
+          "id, full_name, avatar_url, plan, credits_balance, credits_reset_at, created_at",
+        )
+        .eq("id", user.id)
+        .single();
+
+      profileData = fallbackProfileResult.data as UsageProfileRow | null;
+      profileError = fallbackProfileResult.error;
+    } else {
+      stripeCustomerId =
+        typeof profileData?.stripe_customer_id === "string"
+          ? profileData.stripe_customer_id
+          : null;
+    }
 
     if (profileError || !profileData) {
       console.error("Usage profile lookup failed", profileError);
@@ -153,15 +209,28 @@ async function getUsageData(): Promise<UsageData> {
     return {
       profile,
       usageRows: Array.from(usageMap.values()),
+      hasBillingCustomer: Boolean(stripeCustomerId),
+      billingSetupIssues: [
+        ...baseResult.billingSetupIssues,
+        ...(billingSchemaReady
+          ? []
+          : [`Apply ${BILLING_MIGRATION_FILE} to Supabase.`]),
+      ],
     };
   } catch (error) {
     console.error("Usage data lookup failed", error);
-    return { profile: null, usageRows: [] };
+    return baseResult;
   }
 }
 
 export default async function UsagePage() {
-  const { profile, usageRows } = await getUsageData();
+  const {
+    profile,
+    usageRows,
+    hasBillingCustomer,
+    billingSetupIssues,
+  } = await getUsageData();
+  const billingOptions = publicBillingOptions();
   const plan = profile?.plan ?? "free";
   const planTotal = planLimits[plan];
   const credits = profile?.credits_balance ?? 0;
@@ -230,6 +299,13 @@ export default async function UsagePage() {
         </Card>
       </div>
 
+      <BillingActions
+        creditPacks={billingOptions.creditPacks}
+        subscriptionPlans={billingOptions.subscriptionPlans}
+        hasBillingCustomer={hasBillingCustomer}
+        setupIssues={billingSetupIssues}
+      />
+
       <Card>
         <CardHeader>
           <CardTitle>Usage This Month</CardTitle>
@@ -266,21 +342,6 @@ export default async function UsagePage() {
               description="Run a scope check to create this month's first usage record."
             />
           )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <CreditCard className="h-5 w-5 text-[#534AB7]" />
-            <CardTitle>Upgrade Plan</CardTitle>
-          </div>
-          <CardDescription>
-            Free 30/mo · Pro 300/mo · Agency 1000/mo
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Button type="button">Upgrade Plan</Button>
         </CardContent>
       </Card>
     </div>

@@ -156,7 +156,9 @@ async function getDashboardData(): Promise<DashboardData> {
 
     const { data: recentRows, error: recentError } = await supabase
       .from("scope_checks")
-      .select("id, client_request, scope_status, created_at, projects(name)")
+      .select(
+        "id, client_request, scope_status, created_at, project:projects!scope_checks_project_owner_fk(name)",
+      )
       .eq("user_id", user.id)
       .order("created_at", { ascending: false })
       .limit(5);
@@ -171,7 +173,7 @@ async function getDashboardData(): Promise<DashboardData> {
 
         return {
           id: String(record.id),
-          projectName: projectNameFromRelation(record.projects),
+          projectName: projectNameFromRelation(record.project),
           clientRequest: String(record.client_request ?? ""),
           scopeStatus: (record.scope_status ?? null) as ScopeStatus | null,
           createdAt: String(record.created_at),

@@ -10,6 +10,9 @@ ScopeShield AI is a Next.js 14 App Router MVP for freelancers and agencies to sa
 - Scope chunking plus OpenAI embeddings stored in Supabase `vector`.
 - AI scope analysis with retrieved locked-scope evidence.
 - Credit deduction, server-side refunds on analysis failure, and usage logs.
+- Stripe Checkout for one-time credit packs and monthly plans.
+- Stripe webhooks for credit fulfillment and subscription status sync.
+- Stripe Customer Portal for billing management.
 - Result pages with status, risk, hours, matched clauses, suggested action, professional reply, and change request summary.
 - Dashboard and usage pages for project counts, recent checks, and credits.
 
@@ -30,8 +33,17 @@ cp .env.example .env.local
 - `OPENAI_TIMEOUT_MS` - OpenAI request timeout, default `45000`.
 - `DATABASE_URL` - Used by Supabase CLI database commands.
 - `NEXT_PUBLIC_APP_URL` - App base URL, for example `http://localhost:3000`.
+- `STRIPE_SECRET_KEY` - Stripe secret key for server-side Checkout, Portal, and webhook handling.
+- `STRIPE_WEBHOOK_SECRET` - Stripe webhook signing secret for `/api/stripe/webhook`.
+- `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` - Stripe publishable key, reserved for future client-side Stripe.js usage.
+- `STRIPE_CREDITS_80_PRICE_ID` - Stripe one-time Price ID for the 80-credit pack.
+- `STRIPE_CREDITS_200_PRICE_ID` - Stripe one-time Price ID for the 200-credit pack.
+- `STRIPE_PRO_PRICE_ID` - Stripe recurring Price ID for the Pro monthly plan.
+- `STRIPE_AGENCY_PRICE_ID` - Stripe recurring Price ID for the Agency monthly plan.
 
-Do not expose `SUPABASE_SERVICE_ROLE_KEY` in client components or browser code.
+Do not expose `SUPABASE_SERVICE_ROLE_KEY` or `STRIPE_SECRET_KEY` in client components or browser code.
+
+Stripe price env vars must be full IDs from Stripe, such as `price_1ABC...`. Do not enter a dollar amount like `9`, `9.99`, or `900`, and do not invent shortened IDs like `price_9`.
 
 ## Database Setup
 
@@ -43,8 +55,11 @@ Apply migrations in timestamp order:
 4. `supabase/migrations/20260608120000_rag_locking_and_credit_rpc.sql`
 5. `supabase/migrations/20260608123000_fix_credit_rpc_ambiguous_columns.sql`
 6. `supabase/migrations/20260609150000_harden_credit_refunds.sql`
+7. `supabase/migrations/20260609162000_stripe_billing.sql`
 
-The final migration revokes direct authenticated access to `refund_credits` and adds `admin_refund_credits`, which is executable only by `service_role`.
+The credit hardening migration revokes direct authenticated access to `refund_credits` and adds `admin_refund_credits`, which is executable only by `service_role`.
+
+The Stripe billing migration adds Stripe profile fields, purchase/grant tables, webhook event records, and service-role-only RPCs for applying credit purchases and subscription grants.
 
 ## Local Commands
 
@@ -82,12 +97,19 @@ npm run db:diff
 8. Confirm a `usage_logs` row is created.
 9. Confirm the result page shows matched clauses and copyable reply text.
 10. Confirm signed-out users are redirected from dashboard routes to `/login`.
+11. In Stripe test mode, buy a credit pack from `/usage`.
+12. Confirm `/api/stripe/webhook` verifies the event and inserts a `credit_purchases` row.
+13. Confirm credits increase only after the webhook succeeds.
+14. Start a monthly plan checkout from `/usage`.
+15. Confirm `invoice.paid` creates a `subscription_credit_grants` row and updates the profile plan.
 
 ## Security Notes
 
 - User data access is protected by RLS policies on profiles, projects, scope checks, usage logs, and scope chunks.
 - Locked scopes cannot be edited or unlocked by normal project updates.
 - Credit refunds are server initiated through the service-role admin client.
+- Stripe credit grants are server initiated through service-role-only RPCs.
+- Stripe webhook signatures are verified before billing fulfillment.
 - AI instructions are sent as a system message; project/client text is treated as untrusted data.
 
 ## Test Coverage
@@ -97,3 +119,4 @@ Current focused tests cover:
 - Analysis prompt trust-boundary behavior.
 - Scope chunking and zero-value commercial terms.
 - Credit refund migration permissions.
+- Stripe billing catalog and migration permissions.
