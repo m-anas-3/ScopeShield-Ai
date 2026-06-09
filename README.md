@@ -1,89 +1,54 @@
 # ScopeShield AI
 
-Production MVP foundation for ScopeShield AI, a Next.js 14 App Router app that helps freelancers organize agreed project scope before AI-powered scope creep checks are added in Part 2.
+ScopeShield AI is a Next.js 14 App Router MVP for freelancers and agencies to save agreed project scope, lock it into searchable scope clauses, and run AI-powered scope creep checks against new client requests.
 
-## Files Created
+## Current Features
 
-- `.env.example` - Documents required environment variables for Supabase, OpenAI Part 2, and app URL.
-- `.eslintrc.json` - Next.js 14 ESLint rules for core web vitals and TypeScript.
-- `components.json` - shadcn/ui configuration pointing at Tailwind v3 config and app CSS.
-- `middleware.ts` - Root middleware entry that refreshes Supabase sessions and protects dashboard routes.
-- `next.config.mjs` - Next.js 14-compatible app configuration.
-- `package.json` - App scripts and dependencies for Next 14, Tailwind v3, Supabase, shadcn/ui, RHF, Zod, and Sonner.
-- `postcss.config.mjs` - Tailwind v3 and Autoprefixer PostCSS setup.
-- `tailwind.config.ts` - Tailwind v3 theme, content paths, app colors, and animation plugin.
-- `tsconfig.json` - Strict TypeScript configuration for the App Router project.
-- `types/index.ts` - Shared Profile, Project, ScopeCheck, plan, risk, and AI result types.
-- `supabase/migrations/20260606133952_extensions_and_tables.sql` - Creates extensions and the Part 1/Part 2 database tables.
-- `supabase/migrations/20260606134002_triggers.sql` - Creates profile and `updated_at` trigger functions.
-- `supabase/migrations/20260606134007_rls_policies.sql` - Enables RLS and creates per-user access policies.
-- `lib/utils.ts` - Shared class merging, date formatting, and currency formatting helpers.
-- `lib/actions/auth.ts` - Server actions for login, signup, and sign out.
-- `lib/actions/projects.ts` - Server action for validated project creation.
-- `lib/supabase/client.ts` - Browser-only Supabase client factory.
-- `lib/supabase/server.ts` - Server Component and Server Action Supabase client factory.
-- `lib/supabase/middleware.ts` - Supabase middleware session refresh and route guard logic.
-- `lib/validations/auth.ts` - Zod schema for email/password auth forms.
-- `lib/validations/project.ts` - Zod schema for project creation form validation.
-- `app/layout.tsx` - Root metadata, global styles, and Sonner toaster.
-- `app/page.tsx` - Landing page composition.
-- `app/loading.tsx` - Landing/root loading skeleton.
-- `app/(auth)/layout.tsx` - Centered auth page layout.
-- `app/(auth)/login/page.tsx` - Login page.
-- `app/(auth)/login/loading.tsx` - Login skeleton.
-- `app/(auth)/signup/page.tsx` - Signup page.
-- `app/(auth)/signup/loading.tsx` - Signup skeleton.
-- `app/(dashboard)/layout.tsx` - Protected dashboard shell with sidebar, topbar, and profile/credits.
-- `app/(dashboard)/loading.tsx` - Authenticated shell loading skeleton.
-- `app/(dashboard)/dashboard/page.tsx` - Dashboard stats and recent checks shell.
-- `app/(dashboard)/dashboard/loading.tsx` - Dashboard page skeleton.
-- `app/(dashboard)/projects/page.tsx` - Projects grid and empty state.
-- `app/(dashboard)/projects/loading.tsx` - Projects page skeleton.
-- `app/(dashboard)/projects/new/page.tsx` - New project page.
-- `app/(dashboard)/projects/new/loading.tsx` - New project skeleton.
-- `app/(dashboard)/projects/[id]/page.tsx` - Project detail, scope document, and checks shell.
-- `app/(dashboard)/projects/[id]/loading.tsx` - Project detail skeleton.
-- `app/(dashboard)/usage/page.tsx` - Credits, plan, progress, and usage shell.
-- `app/(dashboard)/usage/loading.tsx` - Usage page skeleton.
-- `components/landing/Hero.tsx` - Landing hero with primary CTAs.
-- `components/landing/Features.tsx` - Three feature cards.
-- `components/landing/HowItWorks.tsx` - Three-step workflow section.
-- `components/landing/PricingCTA.tsx` - Free and Pro pricing CTA section.
-- `components/dashboard/Sidebar.tsx` - Dashboard navigation.
-- `components/dashboard/TopBar.tsx` - Mobile menu, new project action, credits badge, and account menu.
-- `components/dashboard/StatsCards.tsx` - Reusable dashboard stat cards.
-- `components/projects/ProjectCard.tsx` - Project summary card.
-- `components/projects/ProjectForm.tsx` - React Hook Form and Zod project creation form.
-- `components/shared/AuthForm.tsx` - Reusable login/signup form using server actions.
-- `components/shared/CreditBadge.tsx` - Credits display badge.
-- `components/shared/EmptyState.tsx` - Reusable centered empty state with optional CTA.
-- `components/ui/*` - shadcn/ui primitives requested for Part 1.
-
-## Supabase SQL Steps
-
-1. Create a Supabase project.
-2. In Authentication settings, keep Email provider enabled. Add `http://localhost:3000/dashboard` as a local redirect URL.
-3. Open SQL Editor.
-4. Apply migrations in timestamp order:
-   - `supabase/migrations/20260606133952_extensions_and_tables.sql`
-   - `supabase/migrations/20260606134002_triggers.sql`
-   - `supabase/migrations/20260606134007_rls_policies.sql`
-5. Confirm tables exist under `public` and RLS is enabled for all four tables.
-6. Sign up through the app and confirm a row is created in `public.profiles`.
+- Landing page with auth CTAs and product sections.
+- Supabase email/password auth with protected dashboard routes.
+- Project create, edit, detail, and scope-locking flows.
+- Scope chunking plus OpenAI embeddings stored in Supabase `vector`.
+- AI scope analysis with retrieved locked-scope evidence.
+- Credit deduction, server-side refunds on analysis failure, and usage logs.
+- Result pages with status, risk, hours, matched clauses, suggested action, professional reply, and change request summary.
+- Dashboard and usage pages for project counts, recent checks, and credits.
 
 ## Environment Variables
 
-- `NEXT_PUBLIC_SUPABASE_URL` - Supabase project API URL.
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY` - Supabase anon key used with RLS for auth and user-owned data.
-- `SUPABASE_SERVICE_ROLE_KEY` - Reserved for privileged server work in Part 2. Never expose it client-side.
-- `OPENAI_API_KEY` - Reserved for Part 2 AI analysis. Not used in Part 1.
-- `NEXT_PUBLIC_APP_URL` - App base URL for auth redirects. Use `http://localhost:3000` locally.
-
-## Local Run Commands
+Create `.env.local` from `.env.example` and fill the required values:
 
 ```bash
-cd scopeshield
 cp .env.example .env.local
+```
+
+- `NEXT_PUBLIC_SUPABASE_URL` - Supabase project API URL.
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY` - Supabase anon key used with RLS.
+- `SUPABASE_SERVICE_ROLE_KEY` - Server-only key used for trusted admin operations such as credit refunds.
+- `OPENAI_API_KEY` - OpenAI key for embeddings and analysis.
+- `OPENAI_ANALYSIS_MODEL` - Analysis model, default `gpt-4o-mini`.
+- `OPENAI_EMBEDDING_MODEL` - Embedding model, default `text-embedding-3-small`.
+- `OPENAI_TIMEOUT_MS` - OpenAI request timeout, default `45000`.
+- `DATABASE_URL` - Used by Supabase CLI database commands.
+- `NEXT_PUBLIC_APP_URL` - App base URL, for example `http://localhost:3000`.
+
+Do not expose `SUPABASE_SERVICE_ROLE_KEY` in client components or browser code.
+
+## Database Setup
+
+Apply migrations in timestamp order:
+
+1. `supabase/migrations/20260606133952_extensions_and_tables.sql`
+2. `supabase/migrations/20260606134002_triggers.sql`
+3. `supabase/migrations/20260606134007_rls_policies.sql`
+4. `supabase/migrations/20260608120000_rag_locking_and_credit_rpc.sql`
+5. `supabase/migrations/20260608123000_fix_credit_rpc_ambiguous_columns.sql`
+6. `supabase/migrations/20260609150000_harden_credit_refunds.sql`
+
+The final migration revokes direct authenticated access to `refund_credits` and adds `admin_refund_credits`, which is executable only by `service_role`.
+
+## Local Commands
+
+```bash
 npm install
 npm run dev
 ```
@@ -93,28 +58,42 @@ Quality checks:
 ```bash
 npm run lint
 npx tsc --noEmit
+npm test
 npm run build
 ```
 
-## Verification Checklist
+Database commands:
 
-- Landing page loads at `/` with hero, CTAs, features, how it works, pricing, and footer.
-- `/signup` creates a Supabase email/password account.
-- `/login` signs in and redirects to `/dashboard`.
-- Protected routes redirect signed-out users to `/login`.
-- `/dashboard` shows real DB counts and current credits.
-- `/projects` shows an empty state before project creation.
-- `/projects/new` validates required fields, saves a project, shows Sonner toast, and redirects to `/projects/[id]`.
-- `/projects/[id]` displays project scope, status badge, terms, and checks empty state.
-- `/usage` shows plan badge, credits balance, progress bar, and usage log shell.
-- `npm run lint`, `npx tsc --noEmit`, and `npm run build` pass.
+```bash
+npm run db:push
+npm run db:reset
+npm run db:diff
+```
 
-## Part 2 Connection Points
+## Manual Verification
 
-- Add `/projects/[id]/check` request form.
-- Add OpenAI analysis server action or route handler.
-- Insert rows into `scope_checks`.
-- Add credit deduction and `usage_logs` writes in one server-side flow.
-- Add `/checks/[id]` result page.
-- Surface recent checks on dashboard and project detail.
-- Enforce insufficient-credit handling before analysis.
+1. Sign up through `/signup` and confirm a profile row is created.
+2. Create a project at `/projects/new`.
+3. Open the project detail page and lock the scope.
+4. Confirm scope chunks are created and the project shows as locked.
+5. Run a scope check from `/projects/[id]/check`.
+6. Confirm credits decrease by 8 only after analysis starts.
+7. Confirm a result row appears in `scope_checks`.
+8. Confirm a `usage_logs` row is created.
+9. Confirm the result page shows matched clauses and copyable reply text.
+10. Confirm signed-out users are redirected from dashboard routes to `/login`.
+
+## Security Notes
+
+- User data access is protected by RLS policies on profiles, projects, scope checks, usage logs, and scope chunks.
+- Locked scopes cannot be edited or unlocked by normal project updates.
+- Credit refunds are server initiated through the service-role admin client.
+- AI instructions are sent as a system message; project/client text is treated as untrusted data.
+
+## Test Coverage
+
+Current focused tests cover:
+
+- Analysis prompt trust-boundary behavior.
+- Scope chunking and zero-value commercial terms.
+- Credit refund migration permissions.

@@ -3,8 +3,12 @@ import OpenAI from "openai";
 import { z } from "zod";
 
 import getOpenAIClient, { ANALYSIS_MODEL } from "@/lib/ai/openai";
-import { buildAnalysisPrompt } from "@/lib/ai/prompts";
+import {
+  ANALYSIS_SYSTEM_PROMPT,
+  buildAnalysisUserPrompt,
+} from "@/lib/ai/prompts";
 import { embedText } from "@/lib/rag/embeddings";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { checkSchema } from "@/lib/validations/check";
 import type { AIAnalysisResult } from "@/types";
@@ -134,8 +138,10 @@ function toProjectRow(value: unknown): ProjectRow | null {
   return parsed.success ? parsed.data : null;
 }
 
-async function refundCredits(supabase: ReturnType<typeof createClient>) {
-  const { error } = await supabase.rpc("refund_credits", {
+async function refundCredits(userId: string) {
+  const supabase = createAdminClient();
+  const { error } = await supabase.rpc("admin_refund_credits", {
+    p_user_id: userId,
     p_credits: CREDITS_PER_CHECK,
   });
 
@@ -328,8 +334,12 @@ export async function POST(request: Request) {
       },
       messages: [
         {
+          role: "system",
+          content: ANALYSIS_SYSTEM_PROMPT,
+        },
+        {
           role: "user",
-          content: buildAnalysisPrompt({
+          content: buildAnalysisUserPrompt({
             projectName: project.name,
             clientName: project.client_name,
             revisionLimit: project.revision_limit,
@@ -432,7 +442,7 @@ export async function POST(request: Request) {
     const message = errorMessage(caughtError);
     console.error("Scope analysis failed", caughtError);
     if (creditsConsumed) {
-      await refundCredits(supabase);
+      await refundCredits(user.id);
     }
 
     if (isOpenAIAuthError(caughtError)) {

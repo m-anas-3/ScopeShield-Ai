@@ -42,6 +42,16 @@ function estimateTokens(value: string) {
   return Math.ceil(value.length / 4);
 }
 
+function splitByCharLimit(value: string) {
+  const parts: string[] = [];
+
+  for (let index = 0; index < value.length; index += MAX_CHUNK_CHARS) {
+    parts.push(value.slice(index, index + MAX_CHUNK_CHARS).trim());
+  }
+
+  return parts.filter(Boolean);
+}
+
 function splitLongBlock(block: string) {
   if (block.length <= MAX_CHUNK_CHARS) {
     return [block];
@@ -53,17 +63,17 @@ function splitLongBlock(block: string) {
     .filter(Boolean);
 
   if (sentences.length <= 1) {
-    const parts: string[] = [];
-    for (let index = 0; index < block.length; index += MAX_CHUNK_CHARS) {
-      parts.push(block.slice(index, index + MAX_CHUNK_CHARS).trim());
-    }
-    return parts.filter(Boolean);
+    return splitByCharLimit(block);
   }
+
+  const boundedSentences = sentences.flatMap((sentence) =>
+    sentence.length > MAX_CHUNK_CHARS ? splitByCharLimit(sentence) : sentence,
+  );
 
   const parts: string[] = [];
   let current = "";
 
-  sentences.forEach((sentence) => {
+  boundedSentences.forEach((sentence) => {
     const candidate = current ? `${current} ${sentence}` : sentence;
 
     if (candidate.length > MAX_CHUNK_CHARS && current) {
