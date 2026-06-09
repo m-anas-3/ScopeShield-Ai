@@ -10,9 +10,8 @@ ScopeShield AI is a Next.js 14 App Router MVP for freelancers and agencies to sa
 - Scope chunking plus OpenAI embeddings stored in Supabase `vector`.
 - AI scope analysis with retrieved locked-scope evidence.
 - Credit deduction, server-side refunds on analysis failure, and usage logs.
-- Stripe Checkout for one-time credit packs and monthly plans.
-- Stripe webhooks for credit fulfillment and subscription status sync.
-- Stripe Customer Portal for billing management.
+- Stripe Checkout for one-time credit packs.
+- Stripe webhooks for credit fulfillment.
 - Result pages with status, risk, hours, matched clauses, suggested action, professional reply, and change request summary.
 - Dashboard and usage pages for project counts, recent checks, and credits.
 
@@ -33,13 +32,11 @@ cp .env.example .env.local
 - `OPENAI_TIMEOUT_MS` - OpenAI request timeout, default `45000`.
 - `DATABASE_URL` - Used by Supabase CLI database commands.
 - `NEXT_PUBLIC_APP_URL` - App base URL, for example `http://localhost:3000`.
-- `STRIPE_SECRET_KEY` - Stripe secret key for server-side Checkout, Portal, and webhook handling.
+- `STRIPE_SECRET_KEY` - Stripe secret key for server-side Checkout and webhook handling.
 - `STRIPE_WEBHOOK_SECRET` - Stripe webhook signing secret for `/api/stripe/webhook`.
 - `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` - Stripe publishable key, reserved for future client-side Stripe.js usage.
 - `STRIPE_CREDITS_80_PRICE_ID` - Stripe one-time Price ID for the 80-credit pack.
 - `STRIPE_CREDITS_200_PRICE_ID` - Stripe one-time Price ID for the 200-credit pack.
-- `STRIPE_PRO_PRICE_ID` - Stripe recurring Price ID for the Pro monthly plan.
-- `STRIPE_AGENCY_PRICE_ID` - Stripe recurring Price ID for the Agency monthly plan.
 
 Do not expose `SUPABASE_SERVICE_ROLE_KEY` or `STRIPE_SECRET_KEY` in client components or browser code.
 
@@ -56,10 +53,11 @@ Apply migrations in timestamp order:
 5. `supabase/migrations/20260608123000_fix_credit_rpc_ambiguous_columns.sql`
 6. `supabase/migrations/20260609150000_harden_credit_refunds.sql`
 7. `supabase/migrations/20260609162000_stripe_billing.sql`
+8. `supabase/migrations/20260609183000_harden_stripe_event_idempotency.sql`
 
 The credit hardening migration revokes direct authenticated access to `refund_credits` and adds `admin_refund_credits`, which is executable only by `service_role`.
 
-The Stripe billing migration adds Stripe profile fields, purchase/grant tables, webhook event records, and service-role-only RPCs for applying credit purchases and subscription grants.
+The Stripe billing migration adds Stripe profile fields, purchase/grant tables, webhook event records, and service-role-only RPCs. The app currently uses the credit purchase flow only.
 
 ## Local Commands
 
@@ -67,6 +65,23 @@ The Stripe billing migration adds Stripe profile fields, purchase/grant tables, 
 npm install
 npm run dev
 ```
+
+Local Stripe webhook forwarding must run in a second terminal while testing
+Checkout:
+
+```bash
+npm run stripe:listen
+```
+
+If `npm run dev` starts on another port, forward to that exact port:
+
+```bash
+STRIPE_FORWARD_TO=localhost:3001/api/stripe/webhook npm run stripe:listen
+```
+
+Keep that process running during the Stripe Checkout test. The app should log
+`[stripe.webhook] POST received` and then `credit_purchase.apply.success` when
+Stripe forwards a paid credit Checkout event to `/api/stripe/webhook`.
 
 Quality checks:
 
@@ -100,8 +115,6 @@ npm run db:diff
 11. In Stripe test mode, buy a credit pack from `/usage`.
 12. Confirm `/api/stripe/webhook` verifies the event and inserts a `credit_purchases` row.
 13. Confirm credits increase only after the webhook succeeds.
-14. Start a monthly plan checkout from `/usage`.
-15. Confirm `invoice.paid` creates a `subscription_credit_grants` row and updates the profile plan.
 
 ## Security Notes
 

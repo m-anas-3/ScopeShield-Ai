@@ -25,10 +25,6 @@ type ProfileRow = {
   credits_balance: number;
   credits_reset_at: string | null;
   stripe_customer_id: string | null;
-  stripe_subscription_id: string | null;
-  stripe_subscription_price_id: string | null;
-  subscription_status: string | null;
-  subscription_current_period_end: string | null;
   created_at: string | null;
 };
 
@@ -72,18 +68,6 @@ type AdminDatabase = {
           p_credits: number;
           p_amount_cents: number | null;
           p_currency: string | null;
-        };
-        Returns: number;
-      };
-      admin_apply_subscription_credit_grant: {
-        Args: {
-          p_user_id: string;
-          p_invoice_id: string;
-          p_subscription_id: string;
-          p_price_id: string;
-          p_plan: "pro" | "agency";
-          p_credits: number;
-          p_period_end: string | null;
         };
         Returns: number;
       };

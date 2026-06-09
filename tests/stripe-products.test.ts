@@ -1,23 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
 
 describe("Stripe product catalog", () => {
-  it("maps configured Stripe prices to credit packs and subscription plans", async () => {
+  it("maps configured Stripe prices to credit packs", async () => {
     vi.resetModules();
     vi.stubEnv("STRIPE_CREDITS_80_PRICE_ID", "price_12345678a");
     vi.stubEnv("STRIPE_CREDITS_200_PRICE_ID", "price_12345678b");
-    vi.stubEnv("STRIPE_PRO_PRICE_ID", "price_12345678c");
-    vi.stubEnv("STRIPE_AGENCY_PRICE_ID", "price_12345678d");
 
-    const {
-      getCreditPackByPriceId,
-      getSubscriptionPlanByPriceId,
-      publicBillingOptions,
-    } = await import("../lib/stripe/products");
+    const { getCreditPackByPriceId, publicBillingOptions } = await import(
+      "../lib/stripe/products"
+    );
 
     expect(getCreditPackByPriceId("price_12345678a")?.credits).toBe(80);
     expect(getCreditPackByPriceId("price_12345678b")?.credits).toBe(200);
-    expect(getSubscriptionPlanByPriceId("price_12345678c")?.key).toBe("pro");
-    expect(getSubscriptionPlanByPriceId("price_12345678d")?.credits).toBe(1000);
     expect(publicBillingOptions().creditPacks.every((pack) => pack.enabled)).toBe(
       true,
     );

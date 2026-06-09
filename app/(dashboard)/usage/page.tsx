@@ -8,7 +8,6 @@ import {
 import { createClient } from "@/lib/supabase/server";
 import { publicBillingOptions } from "@/lib/stripe/products";
 import type { Plan, Profile } from "@/types";
-import { Badge } from "@/components/ui/badge";
 import { BillingActions } from "@/components/billing/BillingActions";
 import {
   Card,
@@ -27,18 +26,6 @@ import {
 } from "@/components/ui/table";
 import { EmptyState } from "@/components/shared/EmptyState";
 
-const planLimits: Record<Plan, number> = {
-  free: 30,
-  pro: 300,
-  agency: 1000,
-};
-
-const planLabels: Record<Plan, string> = {
-  free: "Free",
-  pro: "Pro",
-  agency: "Agency",
-};
-
 interface UsageSummaryRow {
   action: string;
   count: number;
@@ -48,7 +35,6 @@ interface UsageSummaryRow {
 interface UsageData {
   profile: Profile | null;
   usageRows: UsageSummaryRow[];
-  hasBillingCustomer: boolean;
   billingSetupIssues: string[];
 }
 
@@ -84,18 +70,6 @@ function monthStartIso() {
   return monthStart.toISOString();
 }
 
-function progressColorClassName(percentRemaining: number) {
-  if (percentRemaining > 50) {
-    return "bg-emerald-500";
-  }
-
-  if (percentRemaining >= 20) {
-    return "bg-yellow-500";
-  }
-
-  return "bg-red-500";
-}
-
 function actionLabel(action: string) {
   return action
     .split("_")
@@ -108,7 +82,6 @@ async function getUsageData(): Promise<UsageData> {
   const baseResult = {
     profile: null,
     usageRows: [],
-    hasBillingCustomer: false,
     billingSetupIssues: stripeSetupIssues(),
   } satisfies UsageData;
 
@@ -124,7 +97,6 @@ async function getUsageData(): Promise<UsageData> {
     }
 
     let billingSchemaReady = true;
-    let stripeCustomerId: string | null = null;
     let profileData: UsageProfileRow | null = null;
     let profileError: unknown = null;
     const profileResult = await supabase
@@ -154,11 +126,6 @@ async function getUsageData(): Promise<UsageData> {
 
       profileData = fallbackProfileResult.data as UsageProfileRow | null;
       profileError = fallbackProfileResult.error;
-    } else {
-      stripeCustomerId =
-        typeof profileData?.stripe_customer_id === "string"
-          ? profileData.stripe_customer_id
-          : null;
     }
 
     if (profileError || !profileData) {
@@ -209,7 +176,6 @@ async function getUsageData(): Promise<UsageData> {
     return {
       profile,
       usageRows: Array.from(usageMap.values()),
-      hasBillingCustomer: Boolean(stripeCustomerId),
       billingSetupIssues: [
         ...baseResult.billingSetupIssues,
         ...(billingSchemaReady
@@ -224,20 +190,12 @@ async function getUsageData(): Promise<UsageData> {
 }
 
 export default async function UsagePage() {
-  const {
-    profile,
-    usageRows,
-    hasBillingCustomer,
-    billingSetupIssues,
-  } = await getUsageData();
+  const { profile, usageRows, billingSetupIssues } = await getUsageData();
   const billingOptions = publicBillingOptions();
-  const plan = profile?.plan ?? "free";
-  const planTotal = planLimits[plan];
   const credits = profile?.credits_balance ?? 0;
-  const used = Math.max(0, planTotal - credits);
-  const percentRemaining = Math.max(
+  const creditsUsedThisMonth = usageRows.reduce(
+    (total, row) => total + row.creditsUsed,
     0,
-    Math.min(100, Math.round((credits / planTotal) * 100)),
   );
 
   return (
@@ -247,20 +205,17 @@ export default async function UsagePage() {
           Usage
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Credits and check history for the current billing period.
+          Credit balance and check history for this month.
         </p>
       </div>
 
       <div className="grid gap-5 lg:grid-cols-[0.75fr_1.25fr]">
         <Card>
           <CardHeader>
-            <CardTitle>Plan</CardTitle>
-            <CardDescription>Current workspace allowance.</CardDescription>
+            <CardTitle>Credit Balance</CardTitle>
+            <CardDescription>Available credits for AI checks.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Badge className="capitalize" variant="secondary">
-              {planLabels[plan]}
-            </Badge>
             <div>
               <p className="text-4xl font-bold tracking-normal text-slate-950">
                 {credits}
@@ -276,33 +231,21 @@ export default async function UsagePage() {
           <CardHeader>
             <div className="flex items-center gap-2">
               <Coins className="h-5 w-5 text-[#534AB7]" />
-              <CardTitle>Credit Balance</CardTitle>
+              <CardTitle>Monthly Usage</CardTitle>
             </div>
-            <CardDescription>
-              {used} used from {planTotal} monthly credits.
-            </CardDescription>
+            <CardDescription>Credits spent on checks this month.</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="mb-2 flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Remaining</span>
-              <span className="font-medium text-slate-950">
-                {credits} / {planTotal}
-              </span>
-            </div>
-            <div className="h-3 overflow-hidden rounded-full bg-slate-200">
-              <div
-                className={`h-full rounded-full ${progressColorClassName(percentRemaining)}`}
-                style={{ width: `${percentRemaining}%` }}
-              />
-            </div>
+            <p className="text-4xl font-bold tracking-normal text-slate-950">
+              {creditsUsedThisMonth}
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">credits used</p>
           </CardContent>
         </Card>
       </div>
 
       <BillingActions
         creditPacks={billingOptions.creditPacks}
-        subscriptionPlans={billingOptions.subscriptionPlans}
-        hasBillingCustomer={hasBillingCustomer}
         setupIssues={billingSetupIssues}
       />
 

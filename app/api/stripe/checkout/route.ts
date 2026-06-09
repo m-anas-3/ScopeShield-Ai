@@ -8,15 +8,11 @@ import {
 } from "@/lib/billing/setup";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import {
-  assertConfiguredPrice,
-  getCreditPack,
-  getSubscriptionPlan,
-} from "@/lib/stripe/products";
+import { assertConfiguredPrice, getCreditPack } from "@/lib/stripe/products";
 import { getAppUrl, getStripe } from "@/lib/stripe/server";
 
 const checkoutRequestSchema = z.object({
-  checkoutType: z.enum(["credits", "subscription"]),
+  checkoutType: z.literal("credits"),
   itemKey: z.string().min(1),
 });
 
@@ -47,7 +43,7 @@ function isStripeMissingResourceError(error: unknown) {
 async function assertStripePriceReady(
   stripe: ReturnType<typeof getStripe>,
   priceConfig: StripePriceConfig,
-  expectedMode: "payment" | "subscription",
+  expectedMode: "payment",
 ) {
   assertConfiguredPrice(priceConfig);
 
@@ -63,12 +59,6 @@ async function assertStripePriceReady(
     if (expectedMode === "payment" && price.recurring) {
       throw new Error(
         `${priceConfig.envName} points to a recurring Price. Use a one-time Price for credit packs.`,
-      );
-    }
-
-    if (expectedMode === "subscription" && !price.recurring) {
-      throw new Error(
-        `${priceConfig.envName} points to a one-time Price. Use a recurring Price for subscriptions.`,
       );
     }
   } catch (error) {
@@ -124,9 +114,11 @@ async function getOrCreateStripeCustomer(userId: string, email?: string) {
 
 export async function POST(request: Request) {
   try {
+    console.log("[stripe.checkout] request received");
     const setupIssues = stripeSetupIssues();
 
     if (setupIssues.length > 0) {
+      console.log("[stripe.checkout] setup blocked", { issues: setupIssues });
       return NextResponse.json(
         { error: setupIssues.join(" ") },
         { status: 503 },
@@ -140,14 +132,24 @@ export async function POST(request: Request) {
     } = await supabase.auth.getUser();
 
     if (userError || !user) {
+      console.log("[stripe.checkout] unauthorized request");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const parsed = checkoutRequestSchema.safeParse(await request.json());
 
     if (!parsed.success) {
+      console.log("[stripe.checkout] invalid request body", {
+        userId: user.id,
+      });
       return NextResponse.json({ error: "Invalid checkout request" }, { status: 400 });
     }
+
+    console.log("[stripe.checkout] parsed request", {
+      userId: user.id,
+      checkoutType: parsed.data.checkoutType,
+      itemKey: parsed.data.itemKey,
+    });
 
     const stripe = getStripe();
     const appUrl = getAppUrl();
@@ -156,75 +158,46 @@ export async function POST(request: Request) {
       user.email ?? undefined,
     );
 
-    if (parsed.data.checkoutType === "credits") {
-      const pack = getCreditPack(parsed.data.itemKey);
+    const pack = getCreditPack(parsed.data.itemKey);
 
-      if (!pack) {
-        return NextResponse.json(
-          { error: "Credit pack is not configured." },
-          { status: 500 },
-        );
-      }
-
-      await assertStripePriceReady(stripe, pack, "payment");
-
-      const metadata = {
-        user_id: user.id,
-        checkout_type: "credits",
-        item_key: pack.key,
-        price_id: pack.priceId,
-        credits: String(pack.credits),
-      };
-
-      const session = await stripe.checkout.sessions.create({
-        mode: "payment",
-        customer: customerId,
-        client_reference_id: user.id,
-        line_items: [{ price: pack.priceId, quantity: 1 }],
-        success_url: `${appUrl}/usage?checkout=success`,
-        cancel_url: `${appUrl}/usage?checkout=cancelled`,
-        allow_promotion_codes: true,
-        metadata,
-        payment_intent_data: {
-          metadata,
-        },
-      });
-
-      return NextResponse.json({ url: session.url });
-    }
-
-    const plan = getSubscriptionPlan(parsed.data.itemKey);
-
-    if (!plan) {
+    if (!pack) {
       return NextResponse.json(
-        { error: "Subscription plan is not configured." },
+        { error: "Credit pack is not configured." },
         { status: 500 },
       );
     }
 
-    await assertStripePriceReady(stripe, plan, "subscription");
+    await assertStripePriceReady(stripe, pack, "payment");
 
     const metadata = {
       user_id: user.id,
-      checkout_type: "subscription",
-      item_key: plan.key,
-      price_id: plan.priceId,
-      plan: plan.key,
-      credits: String(plan.credits),
+      checkout_type: "credits",
+      item_key: pack.key,
+      price_id: pack.priceId,
+      credits: String(pack.credits),
     };
 
     const session = await stripe.checkout.sessions.create({
-      mode: "subscription",
+      mode: "payment",
       customer: customerId,
       client_reference_id: user.id,
-      line_items: [{ price: plan.priceId, quantity: 1 }],
+      line_items: [{ price: pack.priceId, quantity: 1 }],
       success_url: `${appUrl}/usage?checkout=success`,
       cancel_url: `${appUrl}/usage?checkout=cancelled`,
       allow_promotion_codes: true,
       metadata,
-      subscription_data: {
+      payment_intent_data: {
         metadata,
       },
+    });
+
+    console.log("[stripe.checkout] payment session created", {
+      userId: user.id,
+      checkoutSessionId: session.id,
+      checkoutType: metadata.checkout_type,
+      priceId: metadata.price_id,
+      credits: metadata.credits,
+      mode: session.mode,
     });
 
     return NextResponse.json({ url: session.url });

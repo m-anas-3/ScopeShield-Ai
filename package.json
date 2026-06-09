@@ -9,6 +9,7 @@
     "db:reset": "supabase db reset",
     "db:diff": "supabase db diff",
     "db:seed": "supabase db reset --db-url $DATABASE_URL",
+    "stripe:listen": "set -a; . ./.env.local; set +a; STRIPE_FORWARD_TO=${STRIPE_FORWARD_TO:-localhost:3000/api/stripe/webhook}; STRIPE_API_KEY=\"$STRIPE_SECRET_KEY\" stripe listen --events checkout.session.completed --forward-to \"$STRIPE_FORWARD_TO\"",
     "start": "next start",
     "test": "vitest run",
     "lint": "next lint"
