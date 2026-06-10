@@ -2,6 +2,8 @@ import "server-only";
 
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 
+import { requireServerEnv } from "@/lib/env/server";
+
 type Json =
   | string
   | number
@@ -36,6 +38,39 @@ type StripeEventRow = {
   processed_at: string | null;
 };
 
+type CreditLedgerEntryRow = {
+  id: string;
+  user_id: string;
+  direction: "credit" | "debit";
+  source:
+    | "starter"
+    | "monthly_free"
+    | "purchase"
+    | "subscription"
+    | "scope_check"
+    | "refund";
+  credits: number;
+  balance_after: number;
+  idempotency_key: string | null;
+  reference_type: string | null;
+  reference_id: string | null;
+  metadata: Json;
+  created_at: string;
+};
+
+type AnalysisRequestRow = {
+  id: string;
+  user_id: string;
+  project_id: string;
+  idempotency_key: string;
+  request_hash: string;
+  status: "processing" | "completed" | "failed";
+  scope_check_id: string | null;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 type AdminDatabase = {
   public: {
     Tables: {
@@ -48,6 +83,23 @@ type AdminDatabase = {
         StripeEventRow,
         Omit<StripeEventRow, "processed_at"> & { processed_at?: string | null },
         Partial<StripeEventRow>
+      >;
+      credit_ledger_entries: Table<
+        CreditLedgerEntryRow,
+        Omit<CreditLedgerEntryRow, "id" | "created_at"> & {
+          id?: string;
+          created_at?: string;
+        },
+        Partial<CreditLedgerEntryRow>
+      >;
+      analysis_requests: Table<
+        AnalysisRequestRow,
+        Omit<AnalysisRequestRow, "id" | "created_at" | "updated_at"> & {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+        },
+        Partial<AnalysisRequestRow>
       >;
     };
     Views: Record<string, never>;
@@ -78,6 +130,18 @@ type AdminDatabase = {
         };
         Returns: number;
       };
+      admin_apply_subscription_credit_grant: {
+        Args: {
+          p_user_id: string;
+          p_invoice_id: string;
+          p_subscription_id: string;
+          p_price_id: string;
+          p_plan: "pro" | "agency";
+          p_credits: number;
+          p_period_end: string | null;
+        };
+        Returns: number;
+      };
     };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
@@ -89,12 +153,13 @@ type AdminClient = ReturnType<typeof createSupabaseClient<AdminDatabase>>;
 let adminClient: AdminClient | null = null;
 
 export function createAdminClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!supabaseUrl || !serviceRoleKey) {
-    throw new Error("Missing Supabase admin environment variables.");
-  }
+  const {
+    NEXT_PUBLIC_SUPABASE_URL: supabaseUrl,
+    SUPABASE_SERVICE_ROLE_KEY: serviceRoleKey,
+  } = requireServerEnv([
+    "NEXT_PUBLIC_SUPABASE_URL",
+    "SUPABASE_SERVICE_ROLE_KEY",
+  ]);
 
   adminClient ??= createSupabaseClient(supabaseUrl, serviceRoleKey, {
     auth: {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2, SearchCheck } from "lucide-react";
 import { useForm } from "react-hook-form";
@@ -34,6 +34,7 @@ interface CheckFormProps {
 export function CheckForm({ projectId, projectName }: CheckFormProps) {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
+  const inFlightIdempotencyKey = useRef<string | null>(null);
   const form = useForm<CheckFormValues>({
     resolver: zodResolver(checkSchema),
     defaultValues: {
@@ -46,6 +47,16 @@ export function CheckForm({ projectId, projectName }: CheckFormProps) {
   });
 
   async function onSubmit(values: CheckFormValues) {
+    if (inFlightIdempotencyKey.current) {
+      return;
+    }
+
+    const idempotencyKey =
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+    inFlightIdempotencyKey.current = idempotencyKey;
     setIsLoading(true);
 
     try {
@@ -53,6 +64,7 @@ export function CheckForm({ projectId, projectName }: CheckFormProps) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "Idempotency-Key": idempotencyKey,
         },
         body: JSON.stringify({
           project_id: projectId,
@@ -67,18 +79,21 @@ export function CheckForm({ projectId, projectName }: CheckFormProps) {
 
       if (response.status === 402) {
         toast.error("You have run out of credits. Please upgrade.");
+        inFlightIdempotencyKey.current = null;
         setIsLoading(false);
         return;
       }
 
       if (!response.ok) {
         toast.error(result.error ?? "Analysis failed. Please try again.");
+        inFlightIdempotencyKey.current = null;
         setIsLoading(false);
         return;
       }
 
       if (!result.id) {
         toast.error("Analysis failed. Please try again.");
+        inFlightIdempotencyKey.current = null;
         setIsLoading(false);
         return;
       }
@@ -86,6 +101,7 @@ export function CheckForm({ projectId, projectName }: CheckFormProps) {
       router.push(`/checks/${result.id}`);
     } catch {
       toast.error("Could not reach the analysis service. Please try again.");
+      inFlightIdempotencyKey.current = null;
       setIsLoading(false);
     }
   }

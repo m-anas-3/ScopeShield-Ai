@@ -9,7 +9,8 @@ ScopeShield AI is a Next.js 14 App Router MVP for freelancers and agencies to sa
 - Project create, edit, detail, and scope-locking flows.
 - Scope chunking plus OpenAI embeddings stored in Supabase `vector`.
 - AI scope analysis with retrieved locked-scope evidence.
-- Credit deduction, server-side refunds on analysis failure, and usage logs.
+- Rate-limited, idempotent AI scope analysis with credit deduction, server-side refunds on analysis failure, and usage logs.
+- Auditable credit ledger for starter, monthly, purchased, subscription, spent, and refunded credits.
 - 30 starter credits plus idempotent 10-credit monthly grants for free users after the signup month.
 - Stripe Checkout for one-time credit packs.
 - Stripe webhooks for credit fulfillment.
@@ -39,6 +40,10 @@ cp .env.example .env.local
 - `STRIPE_CREDITS_50_PRICE_ID` - Stripe one-time Price ID for the 50-credit pack.
 - `STRIPE_CREDITS_100_PRICE_ID` - Stripe one-time Price ID for the 100-credit pack.
 - `STRIPE_CREDITS_200_PRICE_ID` - Stripe one-time Price ID for the 200-credit pack.
+- `RATE_LIMIT_ANALYZE_PER_MINUTE` - Authenticated per-user limit for `/api/analyze`, default `6`.
+- `RATE_LIMIT_ANALYZE_IP_PER_MINUTE` - Unauthenticated IP fallback limit for `/api/analyze`, default `20`.
+- `RATE_LIMIT_CHECKOUT_PER_MINUTE` - Authenticated per-user limit for `/api/stripe/checkout`, default `10`.
+- `RATE_LIMIT_CHECKOUT_IP_PER_MINUTE` - Unauthenticated IP fallback limit for `/api/stripe/checkout`, default `30`.
 
 Do not expose `SUPABASE_SERVICE_ROLE_KEY` or `STRIPE_SECRET_KEY` in client components or browser code.
 
@@ -58,6 +63,7 @@ Apply migrations in timestamp order:
 8. `supabase/migrations/20260609183000_harden_stripe_event_idempotency.sql`
 9. `supabase/migrations/20260609190000_monthly_free_credits.sql`
 10. `supabase/migrations/20260609191000_harden_profile_credit_fields.sql`
+11. `supabase/migrations/20260609192000_credit_ledger_and_analysis_idempotency.sql`
 
 The credit hardening migration revokes direct authenticated access to `refund_credits` and adds `admin_refund_credits`, which is executable only by `service_role`.
 
@@ -68,6 +74,8 @@ The monthly free-credit migration keeps new user profiles at 30 starter credits 
 Monthly grants are issued lazily when a user visits dashboard pages instead of from browser code. This keeps credit mutation server-side and avoids cron setup for the MVP. A protected cron/admin route could be added later if inactive users must receive grants before they next sign in.
 
 The profile hardening migration keeps users from updating credit or billing fields directly through client-side Supabase calls. Credit changes must go through server-side RPCs or verified Stripe webhooks.
+
+The credit ledger and analysis idempotency migration adds `credit_ledger_entries` and `analysis_requests`, enables RLS on both, records future credit mutations from atomic RPCs, and adds indexes for dashboard, usage, and ledger lookups. `/api/analyze` requires an `Idempotency-Key` header so a double submit cannot burn credits or OpenAI calls twice.
 
 ## Stripe Credit Products
 
@@ -103,6 +111,8 @@ Keep that process running during the Stripe Checkout test. The app should log
 `[stripe.webhook] POST received` and then `credit_purchase.apply.success` when
 Stripe forwards a paid credit Checkout event to `/api/stripe/webhook`.
 
+`/api/analyze` and `/api/stripe/checkout` return `429` with `Retry-After` when rate limits are exceeded. The built-in limiter is process-local and suitable for a single-node MVP; use Redis, Upstash, or another shared store before running multiple app instances.
+
 Quality checks:
 
 ```bash
@@ -128,15 +138,19 @@ npm run db:diff
 4. Confirm scope chunks are created and the project shows as locked.
 5. Run a scope check from `/projects/[id]/check`.
 6. Confirm credits decrease by 8 only after analysis starts.
-7. Confirm a result row appears in `scope_checks`.
-8. Confirm a `usage_logs` row is created.
-9. Confirm the result page shows matched clauses and copyable reply text.
-10. Confirm signed-out users are redirected from dashboard routes to `/login`.
-11. In Stripe test mode, buy a credit pack from `/usage`.
-12. Confirm `/api/stripe/webhook` verifies the event and inserts a `credit_purchases` row.
-13. Confirm credits increase only after the webhook succeeds.
-14. For a free user created before the current UTC month, visit `/dashboard` or `/usage` and confirm one `monthly_credit_grants` row exists for the current month.
-15. Refresh `/dashboard` or `/usage` and confirm the current month does not create a second grant row or add another 10 credits.
+7. Double-click or replay the same request with the same `Idempotency-Key` and confirm it does not create a second OpenAI request or second credit debit.
+8. Confirm a result row appears in `scope_checks`.
+9. Confirm a `usage_logs` row and `credit_ledger_entries` debit row are created.
+10. Confirm the result page shows matched clauses and copyable reply text.
+11. Force an analysis failure in development and confirm `admin_refund_credits` restores the 8 credits and a refund ledger row is created.
+12. Confirm signed-out users are redirected from dashboard routes to `/login`.
+13. In Stripe test mode, buy a credit pack from `/usage`.
+14. Confirm `/api/stripe/webhook` verifies the event and inserts a `credit_purchases` row.
+15. Confirm credits increase only after the webhook succeeds and a purchase ledger row is created.
+16. Replay the same Stripe event and confirm it does not add credits twice.
+17. For a free user created before the current UTC month, visit `/dashboard` or `/usage` and confirm one `monthly_credit_grants` row exists for the current month.
+18. Refresh `/dashboard` or `/usage` and confirm the current month does not create a second grant row or add another 10 credits.
+19. Temporarily lower `RATE_LIMIT_ANALYZE_PER_MINUTE` or `RATE_LIMIT_CHECKOUT_PER_MINUTE`, repeat requests, and confirm `429` responses include `Retry-After`.
 
 ## Security Notes
 
@@ -146,6 +160,8 @@ npm run db:diff
 - Monthly free credits are server initiated through a service-role-only RPC and are additive to the existing balance.
 - Stripe credit grants are server initiated through service-role-only RPCs.
 - Stripe webhook signatures are verified before billing fulfillment.
+- Stripe event IDs, Checkout session IDs, invoice IDs, monthly grants, and analysis idempotency keys are stored to prevent duplicate credit grants or duplicate expensive work.
+- `/api/analyze` checks authenticated ownership, project lock/index state, input length, credits, rate limits, and idempotency before OpenAI calls.
 - Authenticated clients cannot directly update credit or billing fields on their profile.
 - AI instructions are sent as a system message; project/client text is treated as untrusted data.
 
@@ -158,3 +174,6 @@ Current focused tests cover:
 - Credit refund migration permissions.
 - Signup starter credits and monthly free-credit migration permissions/idempotency.
 - Stripe billing catalog and migration permissions.
+- Rate-limit behavior.
+- Analyze insufficient-credit and refund behavior.
+- Stripe one-time purchase, duplicate event, and subscription invoice webhook behavior.

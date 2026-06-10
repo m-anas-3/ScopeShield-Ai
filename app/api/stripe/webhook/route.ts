@@ -18,6 +18,13 @@ const REQUIRED_CREDIT_METADATA = [
   "credits",
 ] as const;
 
+const REQUIRED_SUBSCRIPTION_METADATA = [
+  "user_id",
+  "plan",
+  "price_id",
+  "credits",
+] as const;
+
 function toRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object"
     ? (value as Record<string, unknown>)
@@ -129,6 +136,74 @@ function assertCreditAmountMatches(actual: number, expected: number) {
   }
 }
 
+function invoiceLinePeriodEnd(invoice: Stripe.Invoice) {
+  const lines = toRecord(invoice)?.lines;
+  const data = toRecord(lines)?.data;
+  const firstLine = Array.isArray(data) ? toRecord(data[0]) : null;
+  const period = toRecord(firstLine?.period);
+  const end = period?.end;
+
+  return typeof end === "number" ? new Date(end * 1000).toISOString() : null;
+}
+
+function requiredSubscriptionMetadata(invoice: Stripe.Invoice) {
+  const metadata = objectMetadata(invoice);
+
+  if (Object.keys(metadata).length === 0) {
+    return null;
+  }
+
+  const hasSubscriptionSignal =
+    metadata.checkout_type === "subscription" ||
+    metadata.type === "subscription" ||
+    Boolean(metadata.credits || metadata.plan || metadata.price_id);
+
+  if (!hasSubscriptionSignal) {
+    return null;
+  }
+
+  if (
+    metadata.checkout_type &&
+    metadata.checkout_type !== "subscription" &&
+    metadata.type !== "subscription"
+  ) {
+    return null;
+  }
+
+  const missing = REQUIRED_SUBSCRIPTION_METADATA.filter((key) => !metadata[key]);
+
+  if (missing.length > 0) {
+    throw new Error(
+      `Missing subscription invoice metadata: ${missing.join(", ")}.`,
+    );
+  }
+
+  if (metadata.plan !== "pro" && metadata.plan !== "agency") {
+    throw new Error("Invalid subscription plan metadata.");
+  }
+
+  const credits = parseCredits(metadata.credits);
+
+  if (!credits) {
+    throw new Error("Invalid subscription credits metadata.");
+  }
+
+  const subscriptionId = stripeId(toRecord(invoice)?.subscription);
+
+  if (!subscriptionId) {
+    throw new Error("Missing subscription id on paid invoice.");
+  }
+
+  return {
+    userId: metadata.user_id,
+    plan: metadata.plan as "pro" | "agency",
+    priceId: metadata.price_id,
+    credits,
+    subscriptionId,
+    periodEnd: invoiceLinePeriodEnd(invoice),
+  };
+}
+
 async function applyCreditPurchase(session: Stripe.Checkout.Session) {
   if (session.payment_status !== "paid") {
     logWebhookStage("credit_purchase.skipped_unpaid", {
@@ -185,6 +260,48 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
   }
 
   await applyCreditPurchase(session);
+}
+
+async function applySubscriptionCreditGrant(invoice: Stripe.Invoice) {
+  const metadata = requiredSubscriptionMetadata(invoice);
+
+  if (!metadata) {
+    logWebhookStage("subscription_credit.ignored_invoice", {
+      invoiceId: invoice.id,
+    });
+    return;
+  }
+
+  logWebhookStage("subscription_credit.apply.start", {
+    invoiceId: invoice.id,
+    userId: metadata.userId,
+    subscriptionId: metadata.subscriptionId,
+    priceId: metadata.priceId,
+    credits: metadata.credits,
+    plan: metadata.plan,
+  });
+
+  const admin = createAdminClient();
+  const { data, error } = await admin.rpc(
+    "admin_apply_subscription_credit_grant",
+    {
+      p_user_id: metadata.userId,
+      p_invoice_id: invoice.id,
+      p_subscription_id: metadata.subscriptionId,
+      p_price_id: metadata.priceId,
+      p_plan: metadata.plan,
+      p_credits: metadata.credits,
+      p_period_end: metadata.periodEnd,
+    },
+  );
+
+  assertNoSupabaseError("Subscription credit grant failed", error);
+  logWebhookStage("subscription_credit.apply.success", {
+    invoiceId: invoice.id,
+    userId: metadata.userId,
+    credits: metadata.credits,
+    balance: data,
+  });
 }
 
 async function claimStripeEvent(event: Stripe.Event) {
@@ -251,6 +368,10 @@ async function handleStripeEvent(event: Stripe.Event) {
       await handleCheckoutCompleted(
         event.data.object as Stripe.Checkout.Session,
       );
+      break;
+    case "invoice.paid":
+    case "invoice.payment_succeeded":
+      await applySubscriptionCreditGrant(event.data.object as Stripe.Invoice);
       break;
     default:
       logWebhookStage("event.ignored", {

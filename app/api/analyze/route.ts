@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createHash } from "node:crypto";
 import OpenAI from "openai";
 import { z } from "zod";
 
@@ -7,7 +8,18 @@ import {
   ANALYSIS_SYSTEM_PROMPT,
   buildAnalysisUserPrompt,
 } from "@/lib/ai/prompts";
+import {
+  EnvConfigurationError,
+  envSetupMessage,
+  optionalPositiveIntegerEnv,
+} from "@/lib/env/server";
+import { logError, logInfo } from "@/lib/logging/server";
 import { embedText } from "@/lib/rag/embeddings";
+import {
+  checkRateLimit,
+  getClientIp,
+  rateLimitResponse,
+} from "@/lib/security/rate-limit";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { checkSchema } from "@/lib/validations/check";
@@ -17,6 +29,8 @@ const CREDITS_PER_CHECK = 8;
 const MODEL_USED = ANALYSIS_MODEL;
 const MATCH_COUNT = 6;
 const MATCH_SIMILARITY_THRESHOLD = 0.05;
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9._:-]{8,120}$/;
 
 const analysisResponseJsonSchema = {
   name: "scope_analysis_result",
@@ -100,11 +114,63 @@ type ProjectRow = {
   scope_chunks_count: number;
 };
 
+type AnalysisRequestStatus =
+  | "claimed"
+  | "completed"
+  | "processing"
+  | "failed"
+  | "conflict";
+
+type AnalysisRequestClaim = {
+  status: AnalysisRequestStatus;
+  id: string | null;
+  scopeCheckId: string | null;
+  error: string | null;
+};
+
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Unknown error";
 }
 
 class NoRelevantChunksError extends Error {}
+
+function supabaseErrorCode(error: unknown) {
+  if (!error || typeof error !== "object") {
+    return null;
+  }
+
+  const code = (error as { code?: unknown }).code;
+
+  return typeof code === "string" ? code : null;
+}
+
+function analyzeRateLimit() {
+  return optionalPositiveIntegerEnv("RATE_LIMIT_ANALYZE_PER_MINUTE", 6);
+}
+
+function idempotencyKeyFromRequest(request: Request) {
+  const key = request.headers.get("Idempotency-Key")?.trim();
+
+  if (!key) {
+    return null;
+  }
+
+  return IDEMPOTENCY_KEY_PATTERN.test(key) ? key : null;
+}
+
+function hashAnalysisRequest(data: z.infer<typeof checkSchema>) {
+  return createHash("sha256")
+    .update(
+      JSON.stringify({
+        project_id: data.project_id,
+        client_request: data.client_request,
+        urgency: data.urgency ?? null,
+        client_tone: data.client_tone ?? null,
+        extra_notes: data.extra_notes ?? null,
+      }),
+    )
+    .digest("hex");
+}
 
 function isOpenAIRetryableError(error: unknown) {
   return (
@@ -146,8 +212,19 @@ async function refundCredits(userId: string) {
   });
 
   if (error) {
-    console.error("Credit refund failed", error);
+    logError("credits.refund.failed", {
+      userId,
+      credits: CREDITS_PER_CHECK,
+      error: error.message,
+    });
+    return;
   }
+
+  logInfo("credits.refunded", {
+    userId,
+    credits: CREDITS_PER_CHECK,
+    reason: "analysis_failed",
+  });
 }
 
 const creditRpcSchema = z
@@ -176,6 +253,109 @@ async function consumeCredits(supabase: ReturnType<typeof createClient>) {
   }
 
   return creditRpcSchema.parse(firstRpcRow(data));
+}
+
+async function claimAnalysisRequest({
+  userId,
+  projectId,
+  idempotencyKey,
+  requestHash,
+}: {
+  userId: string;
+  projectId: string;
+  idempotencyKey: string;
+  requestHash: string;
+}): Promise<AnalysisRequestClaim> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("analysis_requests")
+    .insert({
+      user_id: userId,
+      project_id: projectId,
+      idempotency_key: idempotencyKey,
+      request_hash: requestHash,
+      status: "processing",
+      scope_check_id: null,
+      error: null,
+    })
+    .select("id, request_hash, status, scope_check_id, error")
+    .single();
+
+  if (!error && data) {
+    return {
+      status: "claimed",
+      id: String(data.id),
+      scopeCheckId: null,
+      error: null,
+    };
+  }
+
+  if (supabaseErrorCode(error) !== "23505") {
+    throw new Error(
+      `Analysis idempotency claim failed: ${error?.message ?? "unknown error"}`,
+    );
+  }
+
+  const { data: existing, error: lookupError } = await admin
+    .from("analysis_requests")
+    .select("id, request_hash, status, scope_check_id, error")
+    .eq("user_id", userId)
+    .eq("idempotency_key", idempotencyKey)
+    .single();
+
+  if (lookupError || !existing) {
+    throw new Error(
+      `Analysis idempotency lookup failed: ${
+        lookupError?.message ?? "unknown error"
+      }`,
+    );
+  }
+
+  if (existing.request_hash !== requestHash) {
+    return {
+      status: "conflict",
+      id: String(existing.id),
+      scopeCheckId: null,
+      error: "Idempotency key was already used for a different request.",
+    };
+  }
+
+  return {
+    status: existing.status as AnalysisRequestStatus,
+    id: String(existing.id),
+    scopeCheckId: existing.scope_check_id
+      ? String(existing.scope_check_id)
+      : null,
+    error: existing.error ? String(existing.error) : null,
+  };
+}
+
+async function updateAnalysisRequest(
+  requestId: string,
+  values: {
+    status: "completed" | "failed";
+    scopeCheckId?: string | null;
+    error?: string | null;
+  },
+) {
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("analysis_requests")
+    .update({
+      status: values.status,
+      scope_check_id: values.scopeCheckId ?? null,
+      error: values.error ?? null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", requestId);
+
+  if (error) {
+    logError("analysis.idempotency_update.failed", {
+      requestId,
+      status: values.status,
+      error: error.message,
+    });
+  }
 }
 
 const matchedChunkSchema = z.object({
@@ -207,7 +387,20 @@ async function matchScopeChunks(
 }
 
 export async function POST(request: Request) {
-  const supabase = createClient();
+  let supabase: ReturnType<typeof createClient>;
+
+  try {
+    supabase = createClient();
+  } catch (caughtError) {
+    if (caughtError instanceof EnvConfigurationError) {
+      return NextResponse.json(
+        { error: envSetupMessage(caughtError) },
+        { status: 503 },
+      );
+    }
+
+    throw caughtError;
+  }
 
   const {
     data: { user },
@@ -215,10 +408,51 @@ export async function POST(request: Request) {
   } = await supabase.auth.getUser();
 
   if (error || !user) {
+    const ipResult = checkRateLimit({
+      key: `ip:${getClientIp(request)}`,
+      limit: optionalPositiveIntegerEnv("RATE_LIMIT_ANALYZE_IP_PER_MINUTE", 20),
+      windowMs: RATE_LIMIT_WINDOW_MS,
+      route: "api.analyze",
+    });
+
+    if (!ipResult.allowed) {
+      return rateLimitResponse(ipResult);
+    }
+
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await request.json();
+  const rateLimit = checkRateLimit({
+    key: `user:${user.id}`,
+    limit: analyzeRateLimit(),
+    windowMs: RATE_LIMIT_WINDOW_MS,
+    route: "api.analyze",
+  });
+
+  if (!rateLimit.allowed) {
+    return rateLimitResponse(rateLimit);
+  }
+
+  const idempotencyKey = idempotencyKeyFromRequest(request);
+
+  if (!idempotencyKey) {
+    return NextResponse.json(
+      {
+        error:
+          "Missing or invalid Idempotency-Key header. Submit each analysis with a stable unique key.",
+      },
+      { status: 400 },
+    );
+  }
+
+  let body: unknown;
+
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
   const parsed = checkSchema.safeParse(body);
 
   if (!parsed.success) {
@@ -259,13 +493,79 @@ export async function POST(request: Request) {
     );
   }
 
+  const requestHash = hashAnalysisRequest(parsed.data);
+  let analysisRequestId: string | null = null;
   let creditsConsumed = false;
 
   try {
     getOpenAIClient();
   } catch (caughtError) {
+    if (caughtError instanceof EnvConfigurationError) {
+      return NextResponse.json(
+        { error: envSetupMessage(caughtError) },
+        { status: 503 },
+      );
+    }
+
     return NextResponse.json(
       { error: errorMessage(caughtError) },
+      { status: 500 },
+    );
+  }
+
+  try {
+    const claim = await claimAnalysisRequest({
+      userId: user.id,
+      projectId: project.id,
+      idempotencyKey,
+      requestHash,
+    });
+
+    analysisRequestId = claim.id;
+
+    if (claim.status === "completed" && claim.scopeCheckId) {
+      logInfo("analysis.idempotent_replay", {
+        userId: user.id,
+        projectId: project.id,
+        scopeCheckId: claim.scopeCheckId,
+      });
+      return NextResponse.json(
+        { id: claim.scopeCheckId, duplicate: true },
+        { status: 200 },
+      );
+    }
+
+    if (claim.status === "processing") {
+      return NextResponse.json(
+        { error: "This analysis request is already in progress." },
+        { status: 409 },
+      );
+    }
+
+    if (claim.status === "failed") {
+      return NextResponse.json(
+        {
+          error:
+            "This analysis request already failed. Submit again to retry with a new idempotency key.",
+        },
+        { status: 409 },
+      );
+    }
+
+    if (claim.status === "conflict") {
+      return NextResponse.json(
+        { error: claim.error ?? "Idempotency key conflict." },
+        { status: 409 },
+      );
+    }
+  } catch (caughtError) {
+    logError("analysis.idempotency_claim.failed", {
+      userId: user.id,
+      projectId: project.id,
+      error: errorMessage(caughtError),
+    });
+    return NextResponse.json(
+      { error: "Unable to start analysis safely. Please try again." },
       { status: 500 },
     );
   }
@@ -275,6 +575,13 @@ export async function POST(request: Request) {
   try {
     creditResult = await consumeCredits(supabase);
   } catch (caughtError) {
+    if (analysisRequestId) {
+      await updateAnalysisRequest(analysisRequestId, {
+        status: "failed",
+        error: errorMessage(caughtError),
+      });
+    }
+
     return NextResponse.json(
       { error: errorMessage(caughtError) },
       { status: 500 },
@@ -282,6 +589,13 @@ export async function POST(request: Request) {
   }
 
   if (!creditResult.success) {
+    if (analysisRequestId) {
+      await updateAnalysisRequest(analysisRequestId, {
+        status: "failed",
+        error: creditResult.reason ?? "credit_deduction_failed",
+      });
+    }
+
     if (creditResult.reason === "insufficient_credits") {
       return NextResponse.json(
         {
@@ -304,6 +618,13 @@ export async function POST(request: Request) {
   }
 
   creditsConsumed = true;
+  logInfo("analysis.started", {
+    userId: user.id,
+    projectId: project.id,
+    analysisRequestId,
+    credits: CREDITS_PER_CHECK,
+    balanceAfterDebit: creditResult.credits_balance,
+  });
 
   try {
     const requestEmbedding = await embedText(parsed.data.client_request);
@@ -437,12 +758,40 @@ export async function POST(request: Request) {
       console.error("Usage log insert failed", insertUsageError);
     }
 
+    if (analysisRequestId) {
+      await updateAnalysisRequest(analysisRequestId, {
+        status: "completed",
+        scopeCheckId: String(newScopeCheck.id),
+      });
+    }
+
+    logInfo("analysis.completed", {
+      userId: user.id,
+      projectId: project.id,
+      scopeCheckId: String(newScopeCheck.id),
+      tokensInput,
+      tokensOutput,
+      credits: CREDITS_PER_CHECK,
+    });
+
     return NextResponse.json(newScopeCheck, { status: 200 });
   } catch (caughtError) {
     const message = errorMessage(caughtError);
-    console.error("Scope analysis failed", caughtError);
+    logError("analysis.failed", {
+      userId: user.id,
+      projectId: project.id,
+      analysisRequestId,
+      error: message,
+    });
     if (creditsConsumed) {
       await refundCredits(user.id);
+    }
+
+    if (analysisRequestId) {
+      await updateAnalysisRequest(analysisRequestId, {
+        status: "failed",
+        error: message,
+      });
     }
 
     if (isOpenAIAuthError(caughtError)) {

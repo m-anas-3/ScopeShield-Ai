@@ -6,6 +6,17 @@ import {
   isMissingBillingSchemaError,
   stripeSetupIssues,
 } from "@/lib/billing/setup";
+import {
+  EnvConfigurationError,
+  envSetupMessage,
+  optionalPositiveIntegerEnv,
+} from "@/lib/env/server";
+import { logError, logInfo } from "@/lib/logging/server";
+import {
+  checkRateLimit,
+  getClientIp,
+  rateLimitResponse,
+} from "@/lib/security/rate-limit";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { assertConfiguredPrice, getCreditPack } from "@/lib/stripe/products";
@@ -15,6 +26,8 @@ const checkoutRequestSchema = z.object({
   checkoutType: z.literal("credits"),
   itemKey: z.string().min(1),
 });
+
+const RATE_LIMIT_WINDOW_MS = 60_000;
 
 interface StripePriceConfig {
   label: string;
@@ -114,11 +127,11 @@ async function getOrCreateStripeCustomer(userId: string, email?: string) {
 
 export async function POST(request: Request) {
   try {
-    console.log("[stripe.checkout] request received");
+    logInfo("stripe.checkout.requested");
     const setupIssues = stripeSetupIssues();
 
     if (setupIssues.length > 0) {
-      console.log("[stripe.checkout] setup blocked", { issues: setupIssues });
+      logInfo("stripe.checkout.setup_blocked", { issues: setupIssues });
       return NextResponse.json(
         { error: setupIssues.join(" ") },
         { status: 503 },
@@ -132,20 +145,42 @@ export async function POST(request: Request) {
     } = await supabase.auth.getUser();
 
     if (userError || !user) {
-      console.log("[stripe.checkout] unauthorized request");
+      const ipResult = checkRateLimit({
+        key: `ip:${getClientIp(request)}`,
+        limit: optionalPositiveIntegerEnv("RATE_LIMIT_CHECKOUT_IP_PER_MINUTE", 30),
+        windowMs: RATE_LIMIT_WINDOW_MS,
+        route: "api.stripe.checkout",
+      });
+
+      if (!ipResult.allowed) {
+        return rateLimitResponse(ipResult);
+      }
+
+      logInfo("stripe.checkout.unauthorized");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const rateLimit = checkRateLimit({
+      key: `user:${user.id}`,
+      limit: optionalPositiveIntegerEnv("RATE_LIMIT_CHECKOUT_PER_MINUTE", 10),
+      windowMs: RATE_LIMIT_WINDOW_MS,
+      route: "api.stripe.checkout",
+    });
+
+    if (!rateLimit.allowed) {
+      return rateLimitResponse(rateLimit);
     }
 
     const parsed = checkoutRequestSchema.safeParse(await request.json());
 
     if (!parsed.success) {
-      console.log("[stripe.checkout] invalid request body", {
+      logInfo("stripe.checkout.invalid_request", {
         userId: user.id,
       });
       return NextResponse.json({ error: "Invalid checkout request" }, { status: 400 });
     }
 
-    console.log("[stripe.checkout] parsed request", {
+    logInfo("stripe.checkout.parsed", {
       userId: user.id,
       checkoutType: parsed.data.checkoutType,
       itemKey: parsed.data.itemKey,
@@ -191,7 +226,7 @@ export async function POST(request: Request) {
       },
     });
 
-    console.log("[stripe.checkout] payment session created", {
+    logInfo("stripe.checkout.session_created", {
       userId: user.id,
       checkoutSessionId: session.id,
       checkoutType: metadata.checkout_type,
@@ -202,8 +237,15 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ url: session.url });
   } catch (error) {
-    console.error("Stripe checkout failed", error);
+    logError("stripe.checkout.failed", { error: error instanceof Error ? error.message : String(error) });
     const message = error instanceof Error ? error.message : null;
+
+    if (error instanceof EnvConfigurationError) {
+      return NextResponse.json(
+        { error: envSetupMessage(error) },
+        { status: 503 },
+      );
+    }
 
     if (message === BILLING_SCHEMA_MISSING_MESSAGE) {
       return NextResponse.json({ error: message }, { status: 503 });

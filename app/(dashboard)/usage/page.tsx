@@ -1,4 +1,4 @@
-import { BarChart3, Coins } from "lucide-react";
+import { BarChart3, Coins, CreditCard, Gift, ReceiptText } from "lucide-react";
 
 import {
   BILLING_MIGRATION_FILE,
@@ -10,6 +10,7 @@ import { createClient } from "@/lib/supabase/server";
 import { publicBillingOptions } from "@/lib/stripe/products";
 import type { Plan, Profile } from "@/types";
 import { BillingActions } from "@/components/billing/BillingActions";
+import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardContent,
@@ -36,7 +37,24 @@ interface UsageSummaryRow {
 interface UsageData {
   profile: Profile | null;
   usageRows: UsageSummaryRow[];
+  ledgerSummary: CreditLedgerSummary;
   billingSetupIssues: string[];
+}
+
+interface CreditLedgerRow {
+  direction: string;
+  source: string;
+  credits: number | null;
+  created_at: string | null;
+}
+
+interface CreditLedgerSummary {
+  starterCredits: number;
+  monthlyFreeThisMonth: number;
+  purchasedCredits: number;
+  subscriptionCredits: number;
+  spentCredits: number;
+  refundedCredits: number;
 }
 
 type UsageProfileRow = {
@@ -79,10 +97,61 @@ function actionLabel(action: string) {
     .join(" ");
 }
 
+function emptyLedgerSummary(): CreditLedgerSummary {
+  return {
+    starterCredits: 0,
+    monthlyFreeThisMonth: 0,
+    purchasedCredits: 0,
+    subscriptionCredits: 0,
+    spentCredits: 0,
+    refundedCredits: 0,
+  };
+}
+
+function summarizeLedger(rows: CreditLedgerRow[]): CreditLedgerSummary {
+  const summary = emptyLedgerSummary();
+  const monthStart = monthStartIso();
+
+  rows.forEach((row) => {
+    const credits = Number(row.credits ?? 0);
+
+    if (row.source === "starter" && row.direction === "credit") {
+      summary.starterCredits += credits;
+    }
+
+    if (
+      row.source === "monthly_free" &&
+      row.direction === "credit" &&
+      String(row.created_at ?? "") >= monthStart
+    ) {
+      summary.monthlyFreeThisMonth += credits;
+    }
+
+    if (row.source === "purchase" && row.direction === "credit") {
+      summary.purchasedCredits += credits;
+    }
+
+    if (row.source === "subscription" && row.direction === "credit") {
+      summary.subscriptionCredits += credits;
+    }
+
+    if (row.source === "scope_check" && row.direction === "debit") {
+      summary.spentCredits += credits;
+    }
+
+    if (row.source === "refund" && row.direction === "credit") {
+      summary.refundedCredits += credits;
+    }
+  });
+
+  return summary;
+}
+
 async function getUsageData(): Promise<UsageData> {
   const baseResult = {
     profile: null,
     usageRows: [],
+    ledgerSummary: emptyLedgerSummary(),
     billingSetupIssues: stripeSetupIssues(),
   } satisfies UsageData;
 
@@ -145,6 +214,23 @@ async function getUsageData(): Promise<UsageData> {
       console.error("Usage summary lookup failed", usageError);
     }
 
+    let ledgerSummary = emptyLedgerSummary();
+    const { data: ledgerData, error: ledgerError } = await supabase
+      .from("credit_ledger_entries")
+      .select("direction, source, credits, created_at")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false });
+
+    if (ledgerError) {
+      if (isMissingBillingSchemaError(ledgerError)) {
+        billingSchemaReady = false;
+      } else {
+        console.error("Credit ledger lookup failed", ledgerError);
+      }
+    } else {
+      ledgerSummary = summarizeLedger((ledgerData ?? []) as CreditLedgerRow[]);
+    }
+
     const usageMap = new Map<string, UsageSummaryRow>();
 
     usageData?.forEach((row) => {
@@ -181,6 +267,7 @@ async function getUsageData(): Promise<UsageData> {
     return {
       profile,
       usageRows: Array.from(usageMap.values()),
+      ledgerSummary,
       billingSetupIssues: [
         ...baseResult.billingSetupIssues,
         ...(billingSchemaReady
@@ -194,14 +281,22 @@ async function getUsageData(): Promise<UsageData> {
   }
 }
 
-export default async function UsagePage() {
-  const { profile, usageRows, billingSetupIssues } = await getUsageData();
+export default async function UsagePage({
+  searchParams,
+}: {
+  searchParams?: { checkout?: string };
+}) {
+  const { profile, usageRows, ledgerSummary, billingSetupIssues } =
+    await getUsageData();
   const billingOptions = publicBillingOptions();
   const credits = profile?.credits_balance ?? 0;
+  const plan = profile?.plan ?? "free";
   const creditsUsedThisMonth = usageRows.reduce(
     (total, row) => total + row.creditsUsed,
     0,
   );
+  const paidCredits =
+    ledgerSummary.purchasedCredits + ledgerSummary.subscriptionCredits;
 
   return (
     <div className="space-y-6">
@@ -214,7 +309,20 @@ export default async function UsagePage() {
         </p>
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-[0.75fr_1.25fr]">
+      {searchParams?.checkout === "success" ? (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+          Checkout completed. Credits appear here after Stripe confirms payment
+          through the verified webhook.
+        </div>
+      ) : null}
+
+      {searchParams?.checkout === "cancelled" ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          Checkout was cancelled. No credits were added or charged.
+        </div>
+      ) : null}
+
+      <div className="grid gap-5 lg:grid-cols-4">
         <Card>
           <CardHeader>
             <CardTitle>Credit Balance</CardTitle>
@@ -235,6 +343,46 @@ export default async function UsagePage() {
         <Card>
           <CardHeader>
             <div className="flex items-center gap-2">
+              <Gift className="h-5 w-5 text-emerald-600" />
+              <CardTitle>Free Credits</CardTitle>
+            </div>
+            <CardDescription>Starter and monthly free grants.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-4xl font-bold tracking-normal text-slate-950">
+              {ledgerSummary.monthlyFreeThisMonth}
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              monthly credits granted
+            </p>
+            <p className="mt-3 text-xs text-muted-foreground">
+              {ledgerSummary.starterCredits || STARTER_CREDITS} starter credits
+              on signup.
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <CreditCard className="h-5 w-5 text-[#534AB7]" />
+              <CardTitle>Paid Credits</CardTitle>
+            </div>
+            <CardDescription>Credits added by Stripe events.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-4xl font-bold tracking-normal text-slate-950">
+              {paidCredits}
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              purchased or subscription credits
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
               <Coins className="h-5 w-5 text-[#534AB7]" />
               <CardTitle>Monthly Usage</CardTitle>
             </div>
@@ -245,9 +393,45 @@ export default async function UsagePage() {
               {creditsUsedThisMonth}
             </p>
             <p className="mt-1 text-sm text-muted-foreground">credits used</p>
+            {ledgerSummary.refundedCredits > 0 ? (
+              <p className="mt-3 text-xs text-muted-foreground">
+                {ledgerSummary.refundedCredits} credits refunded after failed
+                checks.
+              </p>
+            ) : null}
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <ReceiptText className="h-5 w-5 text-slate-700" />
+            <CardTitle>Billing Status</CardTitle>
+          </div>
+          <CardDescription>
+            Credit grants are fulfilled server-side after verified events.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <Badge variant="outline" className="capitalize">
+              {plan}
+            </Badge>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Free users receive 10 monthly credits after the signup month.
+              Purchased credits stack on top of the current balance.
+            </p>
+          </div>
+          {billingSetupIssues.length > 0 ? (
+            <p className="max-w-xl text-sm text-amber-700">
+              {billingSetupIssues.join(" ")}
+            </p>
+          ) : (
+            <p className="text-sm text-emerald-700">Stripe billing is configured.</p>
+          )}
+        </CardContent>
+      </Card>
 
       <BillingActions
         creditPacks={billingOptions.creditPacks}

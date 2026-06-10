@@ -24,5 +24,9 @@ export function stripeSetupIssues() {
     issues.push("Add STRIPE_WEBHOOK_SECRET to .env.local.");
   }
 
+  if (!process.env.NEXT_PUBLIC_APP_URL) {
+    issues.push("Add NEXT_PUBLIC_APP_URL to .env.local.");
+  }
+
   return issues;
 }
