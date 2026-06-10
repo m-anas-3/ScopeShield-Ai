@@ -85,26 +85,27 @@ function creditSession(
   metadata: Record<string, string> = {
     user_id: "user_123",
     checkout_type: "credits",
-    price_id: "price_credits80",
-    credits: "80",
+    price_id: "price_credits50",
+    credits: "50",
   },
 ) {
   return {
-    id: "cs_credit_80",
+    id: "cs_credit_50",
     object: "checkout.session",
-    amount_total: 900,
+    amount_total: 500,
     client_reference_id: "user_123",
     currency: "usd",
     metadata,
     mode: "payment",
-    payment_intent: "pi_credit_80",
+    payment_intent: "pi_credit_50",
     payment_status: "paid",
   } as unknown as Stripe.Checkout.Session;
 }
 
 async function loadWebhookRoute(event: Stripe.Event, state = makeState()) {
   vi.resetModules();
-  vi.stubEnv("STRIPE_CREDITS_80_PRICE_ID", "price_credits80");
+  vi.stubEnv("STRIPE_CREDITS_50_PRICE_ID", "price_credits50");
+  vi.stubEnv("STRIPE_CREDITS_100_PRICE_ID", "price_credits100");
   vi.stubEnv("STRIPE_CREDITS_200_PRICE_ID", "price_credits200");
 
   const admin = createAdminMock(state);
@@ -165,12 +166,12 @@ describe("Stripe credit webhook route", () => {
     expect(admin.rpc).toHaveBeenCalledWith(
       "admin_apply_credit_purchase",
       expect.objectContaining({
-        p_amount_cents: 900,
-        p_checkout_session_id: "cs_credit_80",
-        p_credits: 80,
+        p_amount_cents: 500,
+        p_checkout_session_id: "cs_credit_50",
+        p_credits: 50,
         p_currency: "usd",
-        p_payment_intent_id: "pi_credit_80",
-        p_price_id: "price_credits80",
+        p_payment_intent_id: "pi_credit_50",
+        p_price_id: "price_credits50",
         p_user_id: "user_123",
       }),
     );
@@ -220,9 +221,29 @@ describe("Stripe credit webhook route", () => {
         user_id: "user_123",
         checkout_type: "credits",
         price_id: "price_unknown",
-        credits: "80",
+        credits: "50",
       }),
       "evt_unknown_price",
+    );
+    const { POST, admin, state } = await loadWebhookRoute(event);
+
+    const response = await POST(signedRequest("{}"));
+
+    expect(response.status).toBe(500);
+    expect(admin.rpc).not.toHaveBeenCalled();
+    expect(state.eventUpdates).toHaveLength(0);
+  });
+
+  it("fails without applying credits when metadata credits do not match the configured price", async () => {
+    const event = stripeEvent(
+      "checkout.session.completed",
+      creditSession({
+        user_id: "user_123",
+        checkout_type: "credits",
+        price_id: "price_credits100",
+        credits: "50",
+      }),
+      "evt_mismatched_credits",
     );
     const { POST, admin, state } = await loadWebhookRoute(event);
 

@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 
+import { grantMonthlyFreeCredits, STARTER_CREDITS } from "@/lib/credits/monthly";
 import { createClient } from "@/lib/supabase/server";
 import type { Plan, Profile } from "@/types";
 import { Sidebar } from "@/components/dashboard/Sidebar";
@@ -35,7 +36,7 @@ function fallbackProfile(userId: string): Profile {
     full_name: null,
     avatar_url: null,
     plan: "free",
-    credits_balance: 30,
+    credits_balance: STARTER_CREDITS,
     credits_reset_at: now,
     created_at: now,
   };
@@ -62,7 +63,7 @@ async function getProfile(userId: string): Promise<Profile> {
       full_name: data.full_name ? String(data.full_name) : null,
       avatar_url: data.avatar_url ? String(data.avatar_url) : null,
       plan: (data.plan ?? "free") as Plan,
-      credits_balance: Number(data.credits_balance ?? 30),
+      credits_balance: Number(data.credits_balance ?? STARTER_CREDITS),
       credits_reset_at: String(data.credits_reset_at),
       created_at: String(data.created_at),
     };
@@ -83,6 +84,7 @@ export default async function DashboardLayout({
     redirect("/login");
   }
 
+  await grantMonthlyFreeCredits(user.id);
   const profile = await getProfile(user.id);
 
   return (

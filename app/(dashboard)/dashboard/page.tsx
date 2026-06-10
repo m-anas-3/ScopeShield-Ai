@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { AlertTriangle, Coins, FolderKanban, Plus, SearchX } from "lucide-react";
 
+import { grantMonthlyFreeCredits, STARTER_CREDITS } from "@/lib/credits/monthly";
 import { formatDate } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/server";
 import type { ScopeStatus } from "@/types";
@@ -115,6 +116,8 @@ async function getDashboardData(): Promise<DashboardData> {
       };
     }
 
+    await grantMonthlyFreeCredits(user.id);
+
     const { count: projectCount, error: projectsError } = await supabase
       .from("projects")
       .select("id", { count: "exact", head: true })
@@ -184,7 +187,7 @@ async function getDashboardData(): Promise<DashboardData> {
       totalProjects: projectCount ?? 0,
       checksThisMonth: checksCount ?? 0,
       outOfScopeCaught: outOfScopeCount ?? 0,
-      creditsRemaining: Number(profile?.credits_balance ?? 30),
+      creditsRemaining: Number(profile?.credits_balance ?? STARTER_CREDITS),
       recentChecks,
     };
   } catch (error) {

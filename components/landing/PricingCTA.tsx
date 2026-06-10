@@ -7,7 +7,7 @@ const plans = [
   {
     name: "Free",
     price: "$0",
-    detail: "30 credits per month",
+    detail: "30 starter, then 10 monthly",
     points: ["Create projects", "Lock scopes", "Run AI checks"],
   },
   {

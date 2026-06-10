@@ -76,7 +76,7 @@ export function AuthForm({ mode, nextPath = "/dashboard" }: AuthFormProps) {
         <CardDescription>
           {isLogin
             ? "Sign in to manage projects and scope checks."
-            : "Start with 30 free scope checks per month."}
+            : "Start with 30 free credits."}
         </CardDescription>
       </CardHeader>
       <CardContent>

@@ -76,7 +76,7 @@ export function BillingActions({ creditPacks, setupIssues }: BillingActionsProps
             : "One-time packs added to your balance after the Stripe webhook succeeds."}
         </CardDescription>
       </CardHeader>
-      <CardContent className="grid gap-3 sm:grid-cols-2">
+      <CardContent className="grid gap-3 md:grid-cols-3">
         {creditPacks.map((pack) => {
           const actionKey = `credits:${pack.key}` as PendingAction;
           const isPending = pendingAction === actionKey;

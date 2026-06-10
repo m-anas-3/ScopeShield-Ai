@@ -5,6 +5,7 @@ import {
   isMissingBillingSchemaError,
   stripeSetupIssues,
 } from "@/lib/billing/setup";
+import { grantMonthlyFreeCredits, STARTER_CREDITS } from "@/lib/credits/monthly";
 import { createClient } from "@/lib/supabase/server";
 import { publicBillingOptions } from "@/lib/stripe/products";
 import type { Plan, Profile } from "@/types";
@@ -57,7 +58,7 @@ function fallbackProfile(userId: string): Profile {
     full_name: null,
     avatar_url: null,
     plan: "free",
-    credits_balance: 30,
+    credits_balance: STARTER_CREDITS,
     credits_reset_at: now,
     created_at: now,
   };
@@ -95,6 +96,8 @@ async function getUsageData(): Promise<UsageData> {
     if (userError || !user) {
       return baseResult;
     }
+
+    await grantMonthlyFreeCredits(user.id);
 
     let billingSchemaReady = true;
     let profileData: UsageProfileRow | null = null;
@@ -167,7 +170,9 @@ async function getUsageData(): Promise<UsageData> {
             ? String(profileData.avatar_url)
             : null,
           plan: (profileData.plan ?? "free") as Plan,
-          credits_balance: Number(profileData.credits_balance ?? 30),
+          credits_balance: Number(
+            profileData.credits_balance ?? STARTER_CREDITS,
+          ),
           credits_reset_at: String(profileData.credits_reset_at),
           created_at: String(profileData.created_at),
         }

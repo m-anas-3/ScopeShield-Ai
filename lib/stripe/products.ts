@@ -1,4 +1,4 @@
-export type CreditPackKey = "credits_80" | "credits_200";
+export type CreditPackKey = "credits_50" | "credits_100" | "credits_200";
 
 export interface CreditPack {
   key: CreditPackKey;
@@ -20,17 +20,25 @@ export interface PublicBillingOption {
 
 export const CREDIT_PACKS: CreditPack[] = [
   {
-    key: "credits_80",
-    label: "80 Credits",
-    description: "One-time credit pack",
-    credits: 80,
-    priceId: process.env.STRIPE_CREDITS_80_PRICE_ID ?? "",
-    envName: "STRIPE_CREDITS_80_PRICE_ID",
+    key: "credits_50",
+    label: "50 Credits",
+    description: "Good for a few active projects.",
+    credits: 50,
+    priceId: process.env.STRIPE_CREDITS_50_PRICE_ID ?? "",
+    envName: "STRIPE_CREDITS_50_PRICE_ID",
+  },
+  {
+    key: "credits_100",
+    label: "100 Credits",
+    description: "Best for regular client work.",
+    credits: 100,
+    priceId: process.env.STRIPE_CREDITS_100_PRICE_ID ?? "",
+    envName: "STRIPE_CREDITS_100_PRICE_ID",
   },
   {
     key: "credits_200",
     label: "200 Credits",
-    description: "One-time credit pack",
+    description: "Best for busy freelancers and agencies.",
     credits: 200,
     priceId: process.env.STRIPE_CREDITS_200_PRICE_ID ?? "",
     envName: "STRIPE_CREDITS_200_PRICE_ID",

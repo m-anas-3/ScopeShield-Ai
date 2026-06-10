@@ -71,6 +71,13 @@ type AdminDatabase = {
         };
         Returns: number;
       };
+      admin_grant_monthly_free_credits: {
+        Args: {
+          p_user_id: string;
+          p_grant_month?: string | null;
+        };
+        Returns: number;
+      };
     };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
