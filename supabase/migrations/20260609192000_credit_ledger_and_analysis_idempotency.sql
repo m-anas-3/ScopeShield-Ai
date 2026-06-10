@@ -11,7 +11,6 @@ create table if not exists public.credit_ledger_entries (
       'starter',
       'monthly_free',
       'purchase',
-      'subscription',
       'scope_check',
       'refund'
     )
@@ -110,9 +109,6 @@ create index if not exists usage_logs_user_created_idx
 
 create index if not exists credit_purchases_user_created_idx
   on public.credit_purchases (user_id, created_at desc);
-
-create index if not exists subscription_credit_grants_user_created_idx
-  on public.subscription_credit_grants (user_id, created_at desc);
 
 create index if not exists monthly_credit_grants_user_created_idx
   on public.monthly_credit_grants (user_id, created_at desc);
@@ -386,124 +382,6 @@ begin
 end;
 $$;
 
-create or replace function public.admin_apply_subscription_credit_grant(
-  p_user_id uuid,
-  p_invoice_id text,
-  p_subscription_id text,
-  p_price_id text,
-  p_plan text,
-  p_credits integer,
-  p_period_end timestamptz
-)
-returns integer
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  v_grant_id uuid;
-  v_balance integer;
-begin
-  if p_user_id is null then
-    raise exception 'User id is required';
-  end if;
-
-  if p_invoice_id is null or length(trim(p_invoice_id)) = 0 then
-    raise exception 'Invoice id is required';
-  end if;
-
-  if p_subscription_id is null or length(trim(p_subscription_id)) = 0 then
-    raise exception 'Subscription id is required';
-  end if;
-
-  if p_price_id is null or length(trim(p_price_id)) = 0 then
-    raise exception 'Price id is required';
-  end if;
-
-  if p_plan not in ('pro', 'agency') then
-    raise exception 'Invalid plan';
-  end if;
-
-  if p_credits is null or p_credits <= 0 then
-    raise exception 'Invalid credit amount';
-  end if;
-
-  insert into public.subscription_credit_grants (
-    user_id,
-    stripe_invoice_id,
-    stripe_subscription_id,
-    stripe_price_id,
-    plan,
-    credits_granted,
-    period_end
-  )
-  values (
-    p_user_id,
-    p_invoice_id,
-    p_subscription_id,
-    p_price_id,
-    p_plan,
-    p_credits,
-    p_period_end
-  )
-  on conflict (stripe_invoice_id) do nothing
-  returning id into v_grant_id;
-
-  if v_grant_id is not null then
-    update public.profiles as p
-    set
-      plan = p_plan,
-      credits_balance = p.credits_balance + p_credits,
-      credits_reset_at = coalesce(p_period_end, p.credits_reset_at),
-      stripe_subscription_id = p_subscription_id,
-      stripe_subscription_price_id = p_price_id,
-      subscription_status = 'active',
-      subscription_current_period_end = p_period_end
-    where p.id = p_user_id
-    returning p.credits_balance into v_balance;
-
-    insert into public.credit_ledger_entries (
-      user_id,
-      direction,
-      source,
-      credits,
-      balance_after,
-      idempotency_key,
-      reference_type,
-      reference_id,
-      metadata
-    )
-    values (
-      p_user_id,
-      'credit',
-      'subscription',
-      p_credits,
-      v_balance,
-      'stripe_invoice:' || p_invoice_id,
-      'stripe_invoice',
-      p_invoice_id,
-      jsonb_build_object(
-        'stripe_subscription_id', p_subscription_id,
-        'stripe_price_id', p_price_id,
-        'plan', p_plan
-      )
-    )
-    on conflict do nothing;
-  else
-    select p.credits_balance
-    into v_balance
-    from public.profiles as p
-    where p.id = p_user_id;
-  end if;
-
-  if v_balance is null then
-    raise exception 'Profile not found';
-  end if;
-
-  return v_balance;
-end;
-$$;
-
 create or replace function public.admin_grant_monthly_free_credits(
   p_user_id uuid,
   p_grant_month date default null
@@ -516,7 +394,6 @@ as $$
 declare
   v_grant_month date;
   v_grant_id uuid;
-  v_plan text;
   v_balance integer;
   v_created_at timestamptz;
 begin
@@ -533,18 +410,14 @@ begin
     raise exception 'Grant month must be the first day of a calendar month';
   end if;
 
-  select p.plan, p.credits_balance, p.created_at
-  into v_plan, v_balance, v_created_at
+  select p.credits_balance, p.created_at
+  into v_balance, v_created_at
   from public.profiles as p
   where p.id = p_user_id
   for update;
 
   if not found then
     raise exception 'Profile not found';
-  end if;
-
-  if v_plan <> 'free' then
-    return v_balance;
   end if;
 
   if v_created_at >= (v_grant_month::timestamp at time zone 'utc') then
@@ -610,11 +483,6 @@ revoke execute on function public.admin_apply_credit_purchase(uuid, text, text, 
 revoke execute on function public.admin_apply_credit_purchase(uuid, text, text, text, integer, integer, text) from anon;
 revoke execute on function public.admin_apply_credit_purchase(uuid, text, text, text, integer, integer, text) from authenticated;
 grant execute on function public.admin_apply_credit_purchase(uuid, text, text, text, integer, integer, text) to service_role;
-
-revoke execute on function public.admin_apply_subscription_credit_grant(uuid, text, text, text, text, integer, timestamptz) from public;
-revoke execute on function public.admin_apply_subscription_credit_grant(uuid, text, text, text, text, integer, timestamptz) from anon;
-revoke execute on function public.admin_apply_subscription_credit_grant(uuid, text, text, text, text, integer, timestamptz) from authenticated;
-grant execute on function public.admin_apply_subscription_credit_grant(uuid, text, text, text, text, integer, timestamptz) to service_role;
 
 revoke execute on function public.admin_grant_monthly_free_credits(uuid, date) from public;
 revoke execute on function public.admin_grant_monthly_free_credits(uuid, date) from anon;

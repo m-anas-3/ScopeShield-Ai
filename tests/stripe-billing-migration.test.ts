@@ -18,6 +18,14 @@ const ledgerMigrationSql = readFileSync(
   "utf8",
 ).toLowerCase();
 
+const removeSubscriptionMigrationSql = readFileSync(
+  path.join(
+    process.cwd(),
+    "supabase/migrations/20260610120000_remove_subscription_billing.sql",
+  ),
+  "utf8",
+).toLowerCase();
+
 describe("Stripe billing migration", () => {
   it("adds idempotent credit purchase records", () => {
     expect(migrationSql).toContain("create table if not exists public.credit_purchases");
@@ -54,9 +62,9 @@ describe("Stripe billing migration", () => {
     );
   });
 
-  it("records credit mutations from purchase, subscription, refund, and consumption RPCs", () => {
+  it("records credit mutations from purchase, refund, and consumption RPCs", () => {
     expect(ledgerMigrationSql).toContain("'purchase'");
-    expect(ledgerMigrationSql).toContain("'subscription'");
+    expect(ledgerMigrationSql).not.toContain("'subscription'");
     expect(ledgerMigrationSql).toContain("'refund'");
     expect(ledgerMigrationSql).toContain("'scope_check'");
     expect(ledgerMigrationSql).toContain("insert into public.credit_ledger_entries");
@@ -65,6 +73,23 @@ describe("Stripe billing migration", () => {
     );
     expect(ledgerMigrationSql).not.toContain(
       "credits_balance = greatest(p.credits_balance, p_credits)",
+    );
+  });
+
+  it("removes subscription plan billing artifacts", () => {
+    expect(migrationSql).not.toContain("subscription_credit_grants");
+    expect(migrationSql).not.toContain("admin_apply_subscription_credit_grant");
+    expect(removeSubscriptionMigrationSql).toContain(
+      "drop table if exists public.subscription_credit_grants",
+    );
+    expect(removeSubscriptionMigrationSql).toContain(
+      "drop column if exists plan",
+    );
+    expect(removeSubscriptionMigrationSql).toContain(
+      "drop column if exists subscription_status",
+    );
+    expect(removeSubscriptionMigrationSql).toContain(
+      "drop function if exists public.admin_apply_subscription_credit_grant",
     );
   });
 

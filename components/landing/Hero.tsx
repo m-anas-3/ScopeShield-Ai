@@ -1,11 +1,12 @@
 import Link from "next/link";
 import {
   ArrowRight,
-  CheckCircle2,
+  ClipboardCheck,
   Clock3,
   FileText,
   LockKeyhole,
   MessageSquareText,
+  MousePointerClick,
   ShieldCheck,
   WalletCards,
 } from "lucide-react";
@@ -15,12 +16,12 @@ import { Button } from "@/components/ui/button";
 
 function ProductPreview() {
   return (
-    <div className="mx-auto w-full max-w-5xl overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl shadow-slate-200/70">
-      <div className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+    <div className="mx-auto w-full max-w-5xl overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl shadow-slate-200/70">
+      <div className="flex flex-col gap-3 border-b border-slate-200 bg-white px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-sm font-semibold text-slate-950">
-              Website redesign scope check
+              Website redesign / client request
             </p>
             <Badge className="border-emerald-200 bg-emerald-50 text-emerald-700">
               <LockKeyhole className="mr-1 h-3 w-3" />
@@ -28,10 +29,10 @@ function ProductPreview() {
             </Badge>
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
-            Client request compared against 6 matched clauses
+            Compared against original scope, exclusions, revisions, and rate
           </p>
         </div>
-        <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700">
+        <div className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-700">
           <WalletCards className="h-4 w-4 text-[#534AB7]" />
           8 credits used
         </div>
@@ -109,7 +110,7 @@ function ProductPreview() {
             ].map(([label, value]) => (
               <div
                 key={label}
-                className="rounded-lg border border-slate-200 bg-white p-3"
+                className="rounded-md border border-slate-200 bg-white p-3"
               >
                 <p className="text-xs text-muted-foreground">{label}</p>
                 <p className="mt-1 text-sm font-semibold text-slate-950">
@@ -126,7 +127,7 @@ function ProductPreview() {
 
 export function Hero() {
   return (
-    <section className="overflow-hidden border-b border-slate-200 bg-[linear-gradient(180deg,#f8fafc_0%,#ffffff_58%,#f1f5f9_100%)]">
+    <section className="overflow-hidden border-b border-slate-200 bg-slate-50">
       <header className="mx-auto flex max-w-6xl items-center justify-between px-4 py-5">
         <Link href="/" className="flex items-center gap-2">
           <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#534AB7] text-white">
@@ -137,6 +138,9 @@ export function Hero() {
           </span>
         </Link>
         <nav className="flex items-center gap-2">
+          <Button asChild variant="ghost" size="sm" className="hidden sm:inline-flex">
+            <Link href="#how-it-works">How it works</Link>
+          </Button>
           <Button asChild variant="ghost" size="sm">
             <Link href="/login">Log in</Link>
           </Button>
@@ -146,39 +150,62 @@ export function Hero() {
         </nav>
       </header>
 
-      <div className="mx-auto max-w-6xl px-4 pb-12 pt-10 sm:pb-16 lg:pt-14">
-        <div className="mx-auto max-w-4xl text-center">
-          <p className="mx-auto inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-sm font-medium text-slate-700 shadow-sm">
-            <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-            Scope creep protection for freelancers and agencies
-          </p>
-          <h1 className="mt-6 text-4xl font-bold leading-tight tracking-normal text-slate-950 sm:text-6xl lg:text-7xl">
-            Know when a client ask becomes paid extra work.
-          </h1>
-          <p className="mx-auto mt-6 max-w-2xl text-base leading-7 text-muted-foreground sm:text-lg">
-            Lock the original scope, paste a new client request, and get a
-            grounded verdict with matched clauses, risk, hours, and a polished
-            reply draft.
-          </p>
-          <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
-            <Button
-              asChild
-              size="lg"
-              className="bg-[#534AB7] hover:bg-[#463da2]"
-            >
-              <Link href="/signup">
-                Protect my scope
-                <ArrowRight />
-              </Link>
-            </Button>
-            <Button asChild size="lg" variant="outline">
-              <Link href="/login">Log in</Link>
-            </Button>
+      <div className="mx-auto max-w-6xl px-4 pb-12 pt-8 sm:pb-14 lg:pt-12">
+        <div className="grid gap-10 lg:grid-cols-[0.92fr_1.08fr] lg:items-center">
+          <div>
+            <p className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-sm font-medium text-slate-700 shadow-sm">
+              <ClipboardCheck className="h-4 w-4 text-emerald-600" />
+              AI scope checks for client work
+            </p>
+            <h1 className="mt-6 text-4xl font-bold leading-tight tracking-normal text-slate-950 sm:text-5xl lg:text-6xl">
+              Protect project scope before small client requests become unpaid
+              work.
+            </h1>
+            <p className="mt-6 max-w-2xl text-base leading-7 text-muted-foreground sm:text-lg">
+              Lock the agreed scope, analyze each new request against the exact
+              clauses, and send a professional reply before extra work slips
+              into the project.
+            </p>
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+              <Button
+                asChild
+                size="lg"
+                className="bg-[#534AB7] hover:bg-[#463da2]"
+              >
+                <Link href="/signup">
+                  Start Free
+                  <ArrowRight />
+                </Link>
+              </Button>
+              <Button asChild size="lg" variant="outline">
+                <Link href="#how-it-works">
+                  <MousePointerClick />
+                  See How It Works
+                </Link>
+              </Button>
+            </div>
+            <div className="mt-8 grid gap-3 text-sm text-slate-700 sm:grid-cols-3">
+              {[
+                ["30", "starter credits"],
+                ["6", "matched clauses"],
+                ["8", "credits per check"],
+              ].map(([value, label]) => (
+                <div key={label} className="border-l border-slate-200 pl-3">
+                  <p className="text-xl font-bold text-slate-950">{value}</p>
+                  <p className="mt-1 text-muted-foreground">{label}</p>
+                </div>
+              ))}
+            </div>
           </div>
+
+          <ProductPreview />
         </div>
 
-        <div className="mt-10 sm:mt-12">
-          <ProductPreview />
+        <div className="mt-10 grid gap-3 border-t border-slate-200 pt-5 text-xs font-medium uppercase text-slate-500 sm:grid-cols-4">
+          <span>Scope locking</span>
+          <span>Matched evidence</span>
+          <span>Risk and hours</span>
+          <span>Client-ready reply</span>
         </div>
       </div>
     </section>

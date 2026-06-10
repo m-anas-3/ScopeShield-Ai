@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 
 import { grantMonthlyFreeCredits, STARTER_CREDITS } from "@/lib/credits/monthly";
 import { createClient } from "@/lib/supabase/server";
-import type { Plan, Profile } from "@/types";
+import type { Profile } from "@/types";
 import { Sidebar } from "@/components/dashboard/Sidebar";
 import { TopBar } from "@/components/dashboard/TopBar";
 
@@ -35,7 +35,6 @@ function fallbackProfile(userId: string): Profile {
     id: userId,
     full_name: null,
     avatar_url: null,
-    plan: "free",
     credits_balance: STARTER_CREDITS,
     credits_reset_at: now,
     created_at: now,
@@ -48,7 +47,7 @@ async function getProfile(userId: string): Promise<Profile> {
     const { data, error } = await supabase
       .from("profiles")
       .select(
-        "id, full_name, avatar_url, plan, credits_balance, credits_reset_at, created_at",
+        "id, full_name, avatar_url, credits_balance, credits_reset_at, created_at",
       )
       .eq("id", userId)
       .single();
@@ -62,7 +61,6 @@ async function getProfile(userId: string): Promise<Profile> {
       id: String(data.id),
       full_name: data.full_name ? String(data.full_name) : null,
       avatar_url: data.avatar_url ? String(data.avatar_url) : null,
-      plan: (data.plan ?? "free") as Plan,
       credits_balance: Number(data.credits_balance ?? STARTER_CREDITS),
       credits_reset_at: String(data.credits_reset_at),
       created_at: String(data.created_at),
@@ -94,7 +92,7 @@ export default async function DashboardLayout({
       </div>
       <div className="lg:pl-64">
         <TopBar profile={profile} email={user.email} />
-        <main className="px-4 py-6 lg:px-8">{children}</main>
+        <main className="mx-auto max-w-7xl px-4 py-6 lg:px-8">{children}</main>
       </div>
     </div>
   );

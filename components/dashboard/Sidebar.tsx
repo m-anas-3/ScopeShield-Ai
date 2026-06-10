@@ -2,7 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, FolderKanban, LayoutDashboard, ShieldCheck } from "lucide-react";
+import {
+  BarChart3,
+  FolderKanban,
+  LayoutDashboard,
+  ShieldCheck,
+} from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -26,7 +31,9 @@ export function Sidebar({ className }: { className?: string }) {
         <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#534AB7] text-white">
           <ShieldCheck className="h-5 w-5" />
         </span>
-        <span className="text-lg font-semibold text-slate-950">ScopeShield AI</span>
+        <span className="text-lg font-semibold text-slate-950">
+          ScopeShield AI
+        </span>
       </Link>
       <nav className="flex-1 space-y-1 px-3 py-4">
         {navItems.map((item) => {
@@ -50,7 +57,7 @@ export function Sidebar({ className }: { className?: string }) {
         })}
       </nav>
       <div className="border-t border-gray-200 p-4 text-xs leading-5 text-muted-foreground">
-        Part 1 foundation. AI checks connect in Part 2.
+        Protect scope, review risk, and track credits from one workspace.
       </div>
     </aside>
   );

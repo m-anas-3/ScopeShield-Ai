@@ -104,7 +104,7 @@ export function TopBar({ profile, email }: TopBarProps) {
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuItem asChild>
-              <Link href="/usage">Usage and plan</Link>
+              <Link href="/usage">Usage and billing</Link>
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={handleSignOut} disabled={isPending}>
               Sign out

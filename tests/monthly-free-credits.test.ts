@@ -95,7 +95,8 @@ describe("monthly free credit migration", () => {
   });
 
   it("keeps monthly grant mutation service-role only", () => {
-    expect(monthlyMigrationSql).toContain("if v_plan <> 'free' then");
+    expect(monthlyMigrationSql).not.toContain("v_plan");
+    expect(monthlyMigrationSql).not.toContain("p.plan");
     expect(monthlyMigrationSql).toContain(
       "revoke execute on function public.admin_grant_monthly_free_credits(uuid, date) from public",
     );

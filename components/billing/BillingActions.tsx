@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CreditCard, Loader2, PackagePlus } from "lucide-react";
+import { ArrowRight, CreditCard, Loader2, PackagePlus } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -66,15 +66,22 @@ export function BillingActions({ creditPacks, setupIssues }: BillingActionsProps
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center gap-2">
-          <PackagePlus className="h-5 w-5 text-[#534AB7]" />
-          <CardTitle>Buy Credits</CardTitle>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <PackagePlus className="h-5 w-5 text-[#534AB7]" />
+              <CardTitle>Buy Credits</CardTitle>
+            </div>
+            <CardDescription className="mt-2">
+              {hasSetupIssues
+                ? setupIssues.join(" ")
+                : "One-time packs are added to your balance after the Stripe webhook succeeds."}
+            </CardDescription>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-600">
+            AI scope checks use credits
+          </div>
         </div>
-        <CardDescription>
-          {hasSetupIssues
-            ? setupIssues.join(" ")
-            : "One-time packs added to your balance after the Stripe webhook succeeds."}
-        </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-3 md:grid-cols-3">
         {creditPacks.map((pack) => {
@@ -86,17 +93,30 @@ export function BillingActions({ creditPacks, setupIssues }: BillingActionsProps
               key={pack.key}
               type="button"
               variant="outline"
-              className="h-auto justify-between gap-4 py-3 text-left"
+              className="h-auto min-h-32 justify-between gap-4 rounded-lg border-slate-200 bg-white p-4 text-left hover:border-[#534AB7]/40 hover:bg-slate-50"
               disabled={!pack.enabled || hasSetupIssues || pendingAction !== null}
               onClick={() => handleCreditCheckout(pack.key)}
             >
-              <span>
-                <span className="block font-semibold">{pack.label}</span>
-                <span className="block text-xs font-normal text-muted-foreground">
-                  {pack.setupError ?? `${pack.credits} credits · ${pack.description}`}
+              <span className="min-w-0">
+                <span className="block text-base font-semibold text-slate-950">
+                  {pack.label}
+                </span>
+                <span className="mt-2 block text-3xl font-bold tracking-normal text-slate-950">
+                  {pack.credits}
+                </span>
+                <span className="mt-1 block text-xs font-normal text-muted-foreground">
+                  {pack.setupError ?? `credits - ${pack.description}`}
                 </span>
               </span>
-              {isPending ? <Loader2 className="animate-spin" /> : <CreditCard />}
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#534AB7]/10 text-[#534AB7]">
+                {isPending ? (
+                  <Loader2 className="animate-spin" />
+                ) : pack.enabled && !hasSetupIssues ? (
+                  <ArrowRight />
+                ) : (
+                  <CreditCard />
+                )}
+              </span>
             </Button>
           );
         })}

@@ -3,40 +3,47 @@ import {
   Coins,
   FileSearch,
   Gauge,
+  LockKeyhole,
   MailCheck,
   ShieldCheck,
 } from "lucide-react";
 
 const features = [
   {
+    title: "Scope locking",
+    description:
+      "Freeze the agreed scope before AI checks run, with deliverables and exclusions kept together.",
+    icon: LockKeyhole,
+  },
+  {
     title: "Matched scope clauses",
     description:
-      "Retrieves the locked clauses most relevant to the new request before analysis.",
+      "Surface the exact locked clauses that explain why a request is or is not covered.",
     icon: FileSearch,
   },
   {
-    title: "Grounded AI verdicts",
+    title: "AI scope checks",
     description:
-      "Classifies each ask as in scope, out of scope, or needing clarification.",
+      "Classify requests as in scope, out of scope, or needing clarification.",
     icon: ShieldCheck,
   },
   {
-    title: "Client-ready replies",
+    title: "Risk levels",
     description:
-      "Drafts calm, professional responses for confirmations, questions, and change orders.",
-    icon: MailCheck,
-  },
-  {
-    title: "Risk and hours",
-    description:
-      "Estimates added effort and flags deadline or delivery risk before work starts.",
+      "Flag low, medium, and high-risk asks before they affect timeline or margin.",
     icon: Gauge,
   },
   {
-    title: "Project history",
+    title: "Estimated extra hours",
     description:
-      "Keeps every check attached to the right project for later reference.",
+      "Turn vague client requests into practical effort ranges for change-order conversations.",
     icon: Archive,
+  },
+  {
+    title: "Professional reply",
+    description:
+      "Draft a calm answer that references scope without sounding stiff or defensive.",
+    icon: MailCheck,
   },
   {
     title: "Credit tracking",
@@ -48,25 +55,25 @@ const features = [
 
 export function Features() {
   return (
-    <section className="bg-white py-20">
+    <section className="bg-white py-16 sm:py-20">
       <div className="mx-auto max-w-6xl px-4">
         <div className="mb-10 max-w-3xl">
           <p className="text-sm font-semibold uppercase tracking-normal text-[#534AB7]">
-            Product
+            Features
           </p>
           <h2 className="mt-3 text-3xl font-bold tracking-normal text-slate-950 sm:text-4xl">
-            Built for the exact moment a client asks for one more thing.
+            Everything needed to decide before the work starts.
           </h2>
           <p className="mt-4 text-base leading-7 text-muted-foreground">
-            ScopeShield turns a vague request into evidence, a decision, and a
-            reply your client can understand.
+            ScopeShield turns a client message into evidence, a decision, and a
+            response your client can act on.
           </p>
         </div>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {features.map((feature) => (
             <div
               key={feature.title}
-              className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm"
+              className="rounded-lg border border-slate-200 bg-slate-50 p-5"
             >
               <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100 text-[#534AB7]">
                 <feature.icon className="h-5 w-5" />

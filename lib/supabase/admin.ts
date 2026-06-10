@@ -23,7 +23,6 @@ type ProfileRow = {
   id: string;
   full_name: string | null;
   avatar_url: string | null;
-  plan: "free" | "pro" | "agency";
   credits_balance: number;
   credits_reset_at: string | null;
   stripe_customer_id: string | null;
@@ -46,7 +45,6 @@ type CreditLedgerEntryRow = {
     | "starter"
     | "monthly_free"
     | "purchase"
-    | "subscription"
     | "scope_check"
     | "refund";
   credits: number;
@@ -127,18 +125,6 @@ type AdminDatabase = {
         Args: {
           p_user_id: string;
           p_grant_month?: string | null;
-        };
-        Returns: number;
-      };
-      admin_apply_subscription_credit_grant: {
-        Args: {
-          p_user_id: string;
-          p_invoice_id: string;
-          p_subscription_id: string;
-          p_price_id: string;
-          p_plan: "pro" | "agency";
-          p_credits: number;
-          p_period_end: string | null;
         };
         Returns: number;
       };

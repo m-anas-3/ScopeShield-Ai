@@ -1,50 +1,56 @@
 -- ============================================
--- Monthly free credits
+-- Remove subscription billing artifacts
 -- ============================================
 
--- Keep starter credits explicit for every new profile creation path.
-alter table public.profiles
-  alter column credits_balance set default 30;
+drop function if exists public.admin_apply_subscription_credit_grant(
+  uuid,
+  text,
+  text,
+  text,
+  text,
+  integer,
+  timestamptz
+);
 
-create or replace function public.handle_new_user()
-returns trigger
-language plpgsql
-security definer
-set search_path = public
-as $$
+do $$
 begin
-  insert into public.profiles (id, full_name, avatar_url, credits_balance)
-  values (
-    new.id,
-    new.raw_user_meta_data ->> 'full_name',
-    new.raw_user_meta_data ->> 'avatar_url',
-    30
-  )
-  on conflict (id) do nothing;
-  return new;
+  if to_regclass('public.subscription_credit_grants') is not null then
+    drop policy if exists "subscription_credit_grants: select own"
+      on public.subscription_credit_grants;
+  end if;
 end;
 $$;
 
-create table if not exists public.monthly_credit_grants (
-  id uuid primary key default uuid_generate_v4(),
-  user_id uuid not null references auth.users on delete cascade,
-  grant_month date not null,
-  credits_granted integer not null check (credits_granted > 0),
-  created_at timestamptz not null default now(),
-  constraint monthly_credit_grants_month_start
-    check (extract(day from grant_month) = 1),
-  constraint monthly_credit_grants_user_month_unique
-    unique (user_id, grant_month)
-);
+drop table if exists public.subscription_credit_grants;
 
-alter table public.monthly_credit_grants enable row level security;
+alter table public.profiles
+  drop column if exists plan,
+  drop column if exists stripe_subscription_id,
+  drop column if exists stripe_subscription_price_id,
+  drop column if exists subscription_status,
+  drop column if exists subscription_current_period_end;
 
-drop policy if exists "monthly_credit_grants: select own"
-  on public.monthly_credit_grants;
-create policy "monthly_credit_grants: select own"
-  on public.monthly_credit_grants
-  for select
-  using (auth.uid() = user_id);
+update public.credit_ledger_entries
+set
+  source = 'purchase',
+  metadata = coalesce(metadata, '{}'::jsonb)
+    || jsonb_build_object('legacy_source', 'subscription')
+where source = 'subscription';
+
+alter table public.credit_ledger_entries
+  drop constraint if exists credit_ledger_entries_source_check;
+
+alter table public.credit_ledger_entries
+  add constraint credit_ledger_entries_source_check
+  check (
+    source in (
+      'starter',
+      'monthly_free',
+      'purchase',
+      'scope_check',
+      'refund'
+    )
+  );
 
 create or replace function public.admin_grant_monthly_free_credits(
   p_user_id uuid,
@@ -84,7 +90,6 @@ begin
     raise exception 'Profile not found';
   end if;
 
-  -- The 30 starter credits cover the signup month.
   if v_created_at >= (v_grant_month::timestamp at time zone 'utc') then
     return v_balance;
   end if;
@@ -107,6 +112,28 @@ begin
     set credits_balance = p.credits_balance + 10
     where p.id = p_user_id
     returning p.credits_balance into v_balance;
+
+    insert into public.credit_ledger_entries (
+      user_id,
+      direction,
+      source,
+      credits,
+      balance_after,
+      idempotency_key,
+      reference_type,
+      reference_id
+    )
+    values (
+      p_user_id,
+      'credit',
+      'monthly_free',
+      10,
+      v_balance,
+      'monthly_free:' || p_user_id::text || ':' || v_grant_month::text,
+      'grant_month',
+      v_grant_month::text
+    )
+    on conflict do nothing;
   end if;
 
   return v_balance;

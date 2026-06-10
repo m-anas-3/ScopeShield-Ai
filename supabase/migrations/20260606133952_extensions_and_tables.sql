@@ -15,8 +15,6 @@ create table if not exists public.profiles (
   id           uuid        primary key references auth.users on delete cascade,
   full_name    text,
   avatar_url   text,
-  plan         text        not null default 'free'
-                           check (plan in ('free', 'pro', 'agency')),
   credits_balance  integer not null default 30,
   credits_reset_at timestamptz default now(),
   created_at   timestamptz default now()

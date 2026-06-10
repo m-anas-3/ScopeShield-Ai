@@ -10,7 +10,7 @@ ScopeShield AI is a Next.js 14 App Router MVP for freelancers and agencies to sa
 - Scope chunking plus OpenAI embeddings stored in Supabase `vector`.
 - AI scope analysis with retrieved locked-scope evidence.
 - Rate-limited, idempotent AI scope analysis with credit deduction, server-side refunds on analysis failure, and usage logs.
-- Auditable credit ledger for starter, monthly, purchased, subscription, spent, and refunded credits.
+- Auditable credit ledger for starter, monthly, purchased, spent, and refunded credits.
 - 30 starter credits plus idempotent 10-credit monthly grants for free users after the signup month.
 - Stripe Checkout for one-time credit packs.
 - Stripe webhooks for credit fulfillment.
@@ -64,16 +64,19 @@ Apply migrations in timestamp order:
 9. `supabase/migrations/20260609190000_monthly_free_credits.sql`
 10. `supabase/migrations/20260609191000_harden_profile_credit_fields.sql`
 11. `supabase/migrations/20260609192000_credit_ledger_and_analysis_idempotency.sql`
+12. `supabase/migrations/20260610120000_remove_subscription_billing.sql`
 
 The credit hardening migration revokes direct authenticated access to `refund_credits` and adds `admin_refund_credits`, which is executable only by `service_role`.
 
-The Stripe billing migration adds Stripe profile fields, purchase/grant tables, webhook event records, and service-role-only RPCs. The app currently uses the credit purchase flow only.
+The Stripe billing migration adds the Stripe customer profile field, credit purchase records, webhook event records, and service-role-only RPCs for one-time credit purchases.
 
 The monthly free-credit migration keeps new user profiles at 30 starter credits and adds `monthly_credit_grants` plus the service-role-only `admin_grant_monthly_free_credits` RPC. Dashboard route rendering calls this RPC server-side, and `/dashboard` plus `/usage` call it before loading displayed credit balances. The unique `(user_id, grant_month)` ledger prevents duplicate monthly grants. Starter credits cover the signup month, so the 10-credit monthly grant starts in later calendar months.
 
 Monthly grants are issued lazily when a user visits dashboard pages instead of from browser code. This keeps credit mutation server-side and avoids cron setup for the MVP. A protected cron/admin route could be added later if inactive users must receive grants before they next sign in.
 
 The profile hardening migration keeps users from updating credit or billing fields directly through client-side Supabase calls. Credit changes must go through server-side RPCs or verified Stripe webhooks.
+
+The subscription billing removal migration drops the old `profiles.plan` and subscription status columns, removes subscription credit grant artifacts, and keeps the schema focused on starter, monthly, purchased, spent, and refunded credits.
 
 The credit ledger and analysis idempotency migration adds `credit_ledger_entries` and `analysis_requests`, enables RLS on both, records future credit mutations from atomic RPCs, and adds indexes for dashboard, usage, and ledger lookups. `/api/analyze` requires an `Idempotency-Key` header so a double submit cannot burn credits or OpenAI calls twice.
 
@@ -160,7 +163,7 @@ npm run db:diff
 - Monthly free credits are server initiated through a service-role-only RPC and are additive to the existing balance.
 - Stripe credit grants are server initiated through service-role-only RPCs.
 - Stripe webhook signatures are verified before billing fulfillment.
-- Stripe event IDs, Checkout session IDs, invoice IDs, monthly grants, and analysis idempotency keys are stored to prevent duplicate credit grants or duplicate expensive work.
+- Stripe event IDs, Checkout session IDs, monthly grants, and analysis idempotency keys are stored to prevent duplicate credit grants or duplicate expensive work.
 - `/api/analyze` checks authenticated ownership, project lock/index state, input length, credits, rate limits, and idempotency before OpenAI calls.
 - Authenticated clients cannot directly update credit or billing fields on their profile.
 - AI instructions are sent as a system message; project/client text is treated as untrusted data.
@@ -176,4 +179,4 @@ Current focused tests cover:
 - Stripe billing catalog and migration permissions.
 - Rate-limit behavior.
 - Analyze insufficient-credit and refund behavior.
-- Stripe one-time purchase, duplicate event, and subscription invoice webhook behavior.
+- Stripe one-time purchase and duplicate event webhook behavior.

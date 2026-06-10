@@ -102,30 +102,6 @@ function creditSession(
   } as unknown as Stripe.Checkout.Session;
 }
 
-function subscriptionInvoice(metadata: Record<string, string> = {
-  user_id: "user_123",
-  checkout_type: "subscription",
-  plan: "pro",
-  price_id: "price_pro",
-  credits: "300",
-}) {
-  return {
-    id: "in_subscription_1",
-    object: "invoice",
-    metadata,
-    subscription: "sub_123",
-    lines: {
-      data: [
-        {
-          period: {
-            end: 1783612800,
-          },
-        },
-      ],
-    },
-  } as unknown as Stripe.Invoice;
-}
-
 async function loadWebhookRoute(event: Stripe.Event, state = makeState()) {
   vi.resetModules();
   vi.stubEnv("STRIPE_CREDITS_50_PRICE_ID", "price_credits50");
@@ -278,10 +254,20 @@ describe("Stripe credit webhook route", () => {
     expect(state.eventUpdates).toHaveLength(0);
   });
 
-  it("records but ignores non-credit invoice events", async () => {
+  it("records but ignores invoice events", async () => {
     const event = stripeEvent(
       "invoice.paid",
-      { id: "in_123", object: "invoice" },
+      {
+        id: "in_123",
+        object: "invoice",
+        metadata: {
+          user_id: "user_123",
+          checkout_type: "subscription",
+          plan: "pro",
+          price_id: "price_pro",
+          credits: "300",
+        },
+      },
       "evt_invoice_ignored",
     );
     const { POST, admin, state } = await loadWebhookRoute(event);
@@ -290,32 +276,6 @@ describe("Stripe credit webhook route", () => {
 
     expect(response.status).toBe(200);
     expect(admin.rpc).not.toHaveBeenCalled();
-    expect(state.eventUpdates).toHaveLength(1);
-  });
-
-  it("grants subscription invoice credits idempotently through the admin RPC", async () => {
-    const event = stripeEvent(
-      "invoice.paid",
-      subscriptionInvoice(),
-      "evt_invoice_paid",
-    );
-    const { POST, admin, state } = await loadWebhookRoute(event);
-
-    const response = await POST(signedRequest("{}"));
-
-    expect(response.status).toBe(200);
-    expect(admin.rpc).toHaveBeenCalledWith(
-      "admin_apply_subscription_credit_grant",
-      expect.objectContaining({
-        p_credits: 300,
-        p_invoice_id: "in_subscription_1",
-        p_period_end: "2026-07-09T16:00:00.000Z",
-        p_plan: "pro",
-        p_price_id: "price_pro",
-        p_subscription_id: "sub_123",
-        p_user_id: "user_123",
-      }),
-    );
     expect(state.eventUpdates).toHaveLength(1);
   });
 });

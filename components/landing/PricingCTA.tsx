@@ -7,14 +7,14 @@ const plans = [
   {
     name: "Free",
     price: "$0",
-    detail: "30 starter, then 10 monthly",
-    points: ["Create projects", "Lock scopes", "Run AI checks"],
+    detail: "30 starter credits, then 10 monthly",
+    points: ["Create projects", "Lock scopes", "Run first AI checks"],
   },
   {
-    name: "Pro",
-    price: "$19",
-    detail: "300 credits per month",
-    points: ["Higher check volume", "Full project history", "Reply drafts"],
+    name: "Credit packs",
+    price: "Flexible",
+    detail: "One-time packs for busy client weeks",
+    points: ["Credits stack on balance", "Stripe checkout", "Usage history"],
   },
   {
     name: "Agency",
@@ -26,21 +26,25 @@ const plans = [
 
 export function PricingCTA() {
   return (
-    <section className="border-y border-slate-200 bg-white py-20">
+    <section className="border-b border-slate-200 bg-white py-16 sm:py-20">
       <div className="mx-auto max-w-6xl px-4">
         <div className="mb-10 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl">
             <p className="text-sm font-semibold uppercase tracking-normal text-[#534AB7]">
-              Pricing
+              Pricing and credits
             </p>
             <h2 className="mt-3 text-3xl font-bold tracking-normal text-slate-950 sm:text-4xl">
-              Start free, then scale when scope checks are part of every client
-              conversation.
+              Start free, then add credits when scope checks become part of
+              client delivery.
             </h2>
+            <p className="mt-4 text-base leading-7 text-muted-foreground">
+              ScopeShield uses credits for AI checks so occasional freelancers
+              and busy agencies can control usage without guessing.
+            </p>
           </div>
           <Button asChild className="bg-[#534AB7] hover:bg-[#463da2]">
             <Link href="/signup">
-              Start free
+              Start Free
               <ArrowRight />
             </Link>
           </Button>
@@ -59,7 +63,7 @@ export function PricingCTA() {
                 <p className="text-4xl font-bold tracking-normal text-slate-950">
                   {plan.price}
                 </p>
-                {plan.price !== "Custom" ? (
+                {plan.price === "$0" ? (
                   <p className="pb-1 text-sm text-muted-foreground">/mo</p>
                 ) : null}
               </div>
@@ -84,7 +88,7 @@ export function PricingCTA() {
 
 export function FinalCTA() {
   return (
-    <section className="bg-slate-950 py-20 text-white">
+    <section className="bg-slate-950 py-16 text-white sm:py-20">
       <div className="mx-auto max-w-4xl px-4 text-center">
         <h2 className="text-3xl font-bold tracking-normal sm:text-5xl">
           Protect the margin before the extra work begins.
@@ -94,9 +98,13 @@ export function FinalCTA() {
           answer client requests without relying on memory or awkward guesswork.
         </p>
         <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
-          <Button asChild size="lg" className="bg-white text-slate-950 hover:bg-slate-100">
+          <Button
+            asChild
+            size="lg"
+            className="bg-white text-slate-950 hover:bg-slate-100"
+          >
             <Link href="/signup">
-              Create free account
+              Start Free
               <ArrowRight />
             </Link>
           </Button>
@@ -106,7 +114,7 @@ export function FinalCTA() {
             variant="outline"
             className="border-white/25 bg-transparent text-white hover:bg-white hover:text-slate-950"
           >
-            <Link href="/login">Log in</Link>
+            <Link href="#how-it-works">See How It Works</Link>
           </Button>
         </div>
       </div>

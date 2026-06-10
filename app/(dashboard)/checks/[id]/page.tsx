@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { ArrowLeft } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/server";
 import type { MatchedClause, RiskLevel, ScopeCheck, ScopeStatus } from "@/types";
@@ -133,16 +134,22 @@ export default async function CheckResultPage({ params }: CheckResultPageProps) 
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
-      <div>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-normal text-slate-950">
+            Scope Check Result
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Review the verdict, matched clauses, and suggested client response.
+          </p>
+        </div>
         <Link
           href={`/projects/${check.project_id}`}
-          className="text-sm font-medium text-[#534AB7] hover:underline"
+          className="inline-flex items-center gap-2 text-sm font-medium text-[#534AB7] hover:underline"
         >
-          ← Back to Project
+          <ArrowLeft className="h-4 w-4" />
+          Back to Project
         </Link>
-        <h1 className="mt-3 text-3xl font-bold tracking-normal text-slate-950">
-          Scope Check Result
-        </h1>
       </div>
       <ResultCard check={check} />
     </div>

@@ -1,13 +1,11 @@
 export type ScopeStatus = "in_scope" | "out_of_scope" | "needs_clarification";
 export type RiskLevel = "low" | "medium" | "high";
-export type Plan = "free" | "pro" | "agency";
 export type ProjectStatus = "active" | "completed" | "archived";
 
 export interface Profile {
   id: string;
   full_name: string | null;
   avatar_url: string | null;
-  plan: Plan;
   credits_balance: number;
   credits_reset_at: string;
   created_at: string;
