@@ -1,13 +1,10 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import {
   AlertTriangle,
   ArrowRight,
-  BarChart3,
-  CheckCircle2,
-  Clock3,
   Coins,
   CreditCard,
-  FileLock2,
   FolderKanban,
   Gauge,
   MessageSquareText,
@@ -18,7 +15,7 @@ import {
 import { grantMonthlyFreeCredits, STARTER_CREDITS } from "@/lib/credits/monthly";
 import { formatDate } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/server";
-import type { RiskLevel, ScopeStatus } from "@/types";
+import type { ProjectStatus, RiskLevel, ScopeStatus } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -36,7 +33,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { EmptyState } from "@/components/shared/EmptyState";
+import {
+  DashboardCharts,
+  type DashboardBreakdownDatum,
+  type DashboardTrendDatum,
+} from "@/components/dashboard/DashboardCharts";
 import { StatsCards, type StatCardItem } from "@/components/dashboard/StatsCards";
 
 interface RecentCheck {
@@ -51,39 +52,38 @@ interface RecentCheck {
   createdAt: string;
 }
 
+interface RecentProject {
+  id: string;
+  name: string;
+  clientName: string | null;
+  status: ProjectStatus;
+  scopeLocked: boolean;
+  createdAt: string;
+}
+
 interface AggregateCheck {
   scopeStatus: ScopeStatus | null;
   riskLevel: RiskLevel | null;
-  estimatedHoursMax: number | null;
   creditsUsed: number;
   createdAt: string;
 }
 
-interface TrendPoint {
-  label: string;
-  value: number;
-}
-
-interface BreakdownItem {
-  label: string;
-  value: number;
-  barClassName: string;
-}
-
 interface DashboardData {
   totalProjects: number;
+  activeProjects: number;
   projectsNotLocked: number;
+  totalChecks: number;
   checksThisMonth: number;
-  outOfScopeCaught: number;
   creditsRemaining: number;
   highRiskRequests: number;
-  estimatedExtraHours: number;
   recentChecks: RecentCheck[];
-  scopeStatusDistribution: BreakdownItem[];
-  riskBreakdown: BreakdownItem[];
-  checksTrend: TrendPoint[];
-  creditTrend: TrendPoint[];
+  recentProjects: RecentProject[];
+  scopeStatusDistribution: DashboardBreakdownDatum[];
+  riskBreakdown: DashboardBreakdownDatum[];
+  creditTrend: DashboardTrendDatum[];
 }
+
+const cardClassName = "shadow-[0_1px_2px_rgba(15,23,42,0.04)]";
 
 function monthStartIso() {
   const monthStart = new Date();
@@ -105,6 +105,10 @@ function truncate(value: string, maxLength: number) {
   }
 
   return `${value.slice(0, maxLength - 3)}...`;
+}
+
+function pluralize(value: number, singular: string, plural = `${singular}s`) {
+  return `${value} ${value === 1 ? singular : plural}`;
 }
 
 function scopeStatusLabel(status: ScopeStatus | null) {
@@ -133,6 +137,19 @@ function scopeStatusClassName(status: ScopeStatus | null) {
   }
 }
 
+function riskLabel(risk: RiskLevel | null) {
+  switch (risk) {
+    case "low":
+      return "Low";
+    case "medium":
+      return "Medium";
+    case "high":
+      return "High";
+    default:
+      return "Unknown";
+  }
+}
+
 function riskClassName(risk: RiskLevel | null) {
   switch (risk) {
     case "low":
@@ -143,6 +160,18 @@ function riskClassName(risk: RiskLevel | null) {
       return "border-red-200 bg-red-50 text-red-700";
     default:
       return "border-gray-200 bg-gray-50 text-gray-700";
+  }
+}
+
+function projectStatusLabel(status: ProjectStatus) {
+  switch (status) {
+    case "completed":
+      return "Completed";
+    case "archived":
+      return "Archived";
+    case "active":
+    default:
+      return "Active";
   }
 }
 
@@ -185,27 +214,23 @@ function buildBreakdowns(rows: AggregateCheck[]) {
       {
         label: "In scope",
         value: countStatus("in_scope"),
-        barClassName: "bg-emerald-500",
+        color: "#059669",
       },
       {
         label: "Out of scope",
         value: countStatus("out_of_scope"),
-        barClassName: "bg-red-500",
+        color: "#dc2626",
       },
       {
         label: "Needs clarity",
         value: countStatus("needs_clarification"),
-        barClassName: "bg-amber-500",
+        color: "#d97706",
       },
     ],
     riskBreakdown: [
-      { label: "Low", value: countRisk("low"), barClassName: "bg-blue-500" },
-      {
-        label: "Medium",
-        value: countRisk("medium"),
-        barClassName: "bg-orange-500",
-      },
-      { label: "High", value: countRisk("high"), barClassName: "bg-red-500" },
+      { label: "Low", value: countRisk("low"), color: "#2563eb" },
+      { label: "Medium", value: countRisk("medium"), color: "#d97706" },
+      { label: "High", value: countRisk("high"), color: "#dc2626" },
     ],
   };
 }
@@ -214,7 +239,7 @@ function buildDailyTrend(
   rows: AggregateCheck[],
   days: number,
   valueForRow: (row: AggregateCheck) => number,
-) {
+): DashboardTrendDatum[] {
   const formatter = new Intl.DateTimeFormat("en", { weekday: "short" });
   const points = Array.from({ length: days }, (_, index) => {
     const date = new Date();
@@ -246,16 +271,16 @@ function emptyDashboardData(): DashboardData {
 
   return {
     totalProjects: 0,
+    activeProjects: 0,
     projectsNotLocked: 0,
+    totalChecks: 0,
     checksThisMonth: 0,
-    outOfScopeCaught: 0,
     creditsRemaining: 0,
     highRiskRequests: 0,
-    estimatedExtraHours: 0,
     recentChecks: [],
+    recentProjects: [],
     scopeStatusDistribution,
     riskBreakdown,
-    checksTrend: buildDailyTrend([], 7, () => 0),
     creditTrend: buildDailyTrend([], 7, () => 0),
   };
 }
@@ -263,7 +288,6 @@ function emptyDashboardData(): DashboardData {
 async function getDashboardData(): Promise<DashboardData> {
   const monthStart = monthStartIso();
   const thirtyDaysAgo = daysAgoIso(30);
-  const aggregateStart = monthStart < thirtyDaysAgo ? monthStart : thirtyDaysAgo;
   const emptyData = emptyDashboardData();
 
   try {
@@ -281,12 +305,14 @@ async function getDashboardData(): Promise<DashboardData> {
 
     const [
       projectsResult,
+      activeProjectsResult,
       unlockedProjectsResult,
-      checksResult,
-      outOfScopeResult,
+      totalChecksResult,
+      monthlyChecksResult,
       highRiskResult,
       profileResult,
-      recentResult,
+      recentChecksResult,
+      recentProjectsResult,
       aggregateResult,
     ] = await Promise.all([
       supabase
@@ -297,17 +323,21 @@ async function getDashboardData(): Promise<DashboardData> {
         .from("projects")
         .select("id", { count: "exact", head: true })
         .eq("user_id", user.id)
+        .eq("status", "active"),
+      supabase
+        .from("projects")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", user.id)
         .eq("scope_locked", false),
+      supabase
+        .from("scope_checks")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", user.id),
       supabase
         .from("scope_checks")
         .select("id", { count: "exact", head: true })
         .eq("user_id", user.id)
         .gte("created_at", monthStart),
-      supabase
-        .from("scope_checks")
-        .select("id", { count: "exact", head: true })
-        .eq("user_id", user.id)
-        .eq("scope_status", "out_of_scope"),
       supabase
         .from("scope_checks")
         .select("id", { count: "exact", head: true })
@@ -327,23 +357,29 @@ async function getDashboardData(): Promise<DashboardData> {
         .order("created_at", { ascending: false })
         .limit(6),
       supabase
-        .from("scope_checks")
-        .select(
-          "scope_status, risk_level, estimated_hours_max, credits_used, created_at",
-        )
+        .from("projects")
+        .select("id, name, client_name, status, scope_locked, created_at")
         .eq("user_id", user.id)
-        .gte("created_at", aggregateStart)
+        .order("created_at", { ascending: false })
+        .limit(5),
+      supabase
+        .from("scope_checks")
+        .select("scope_status, risk_level, credits_used, created_at")
+        .eq("user_id", user.id)
+        .gte("created_at", thirtyDaysAgo)
         .order("created_at", { ascending: false }),
     ]);
 
     const queryErrors: Array<[string, unknown]> = [
       ["Project count", projectsResult.error],
+      ["Active project count", activeProjectsResult.error],
       ["Unlocked project count", unlockedProjectsResult.error],
-      ["Monthly checks count", checksResult.error],
-      ["Out-of-scope count", outOfScopeResult.error],
+      ["Total checks count", totalChecksResult.error],
+      ["Monthly checks count", monthlyChecksResult.error],
       ["High-risk count", highRiskResult.error],
       ["Credits lookup", profileResult.error],
-      ["Recent checks lookup", recentResult.error],
+      ["Recent checks lookup", recentChecksResult.error],
+      ["Recent projects lookup", recentProjectsResult.error],
       ["Dashboard aggregate lookup", aggregateResult.error],
     ];
 
@@ -354,7 +390,7 @@ async function getDashboardData(): Promise<DashboardData> {
     });
 
     const recentChecks =
-      recentResult.data?.map((row) => {
+      recentChecksResult.data?.map((row) => {
         const record = row as Record<string, unknown>;
 
         return {
@@ -376,6 +412,21 @@ async function getDashboardData(): Promise<DashboardData> {
         };
       }) ?? [];
 
+    const recentProjects =
+      recentProjectsResult.data?.map((row) => {
+        const record = row as Record<string, unknown>;
+
+        return {
+          id: String(record.id),
+          name: String(record.name ?? "Untitled project"),
+          clientName:
+            record.client_name === null ? null : String(record.client_name ?? ""),
+          status: (record.status ?? "active") as ProjectStatus,
+          scopeLocked: Boolean(record.scope_locked),
+          createdAt: String(record.created_at),
+        };
+      }) ?? [];
+
     const aggregateChecks =
       aggregateResult.data?.map((row) => {
         const record = row as Record<string, unknown>;
@@ -383,34 +434,27 @@ async function getDashboardData(): Promise<DashboardData> {
         return {
           scopeStatus: (record.scope_status ?? null) as ScopeStatus | null,
           riskLevel: (record.risk_level ?? null) as RiskLevel | null,
-          estimatedHoursMax:
-            record.estimated_hours_max === null
-              ? null
-              : Number(record.estimated_hours_max ?? 0),
           creditsUsed: Number(record.credits_used ?? 0),
           createdAt: String(record.created_at),
         };
       }) ?? [];
     const { scopeStatusDistribution, riskBreakdown } =
       buildBreakdowns(aggregateChecks);
-    const estimatedExtraHours = aggregateChecks
-      .filter((row) => row.createdAt >= monthStart)
-      .reduce((total, row) => total + Number(row.estimatedHoursMax ?? 0), 0);
 
     return {
       totalProjects: projectsResult.count ?? 0,
+      activeProjects: activeProjectsResult.count ?? 0,
       projectsNotLocked: unlockedProjectsResult.count ?? 0,
-      checksThisMonth: checksResult.count ?? 0,
-      outOfScopeCaught: outOfScopeResult.count ?? 0,
+      totalChecks: totalChecksResult.count ?? 0,
+      checksThisMonth: monthlyChecksResult.count ?? 0,
       creditsRemaining: Number(
         profileResult.data?.credits_balance ?? STARTER_CREDITS,
       ),
       highRiskRequests: highRiskResult.count ?? 0,
-      estimatedExtraHours,
       recentChecks,
+      recentProjects,
       scopeStatusDistribution,
       riskBreakdown,
-      checksTrend: buildDailyTrend(aggregateChecks, 7, () => 1),
       creditTrend: buildDailyTrend(
         aggregateChecks,
         7,
@@ -423,253 +467,271 @@ async function getDashboardData(): Promise<DashboardData> {
   }
 }
 
-function BreakdownChart({
+function CompactEmptyState({
+  icon,
   title,
   description,
-  items,
+  actionLabel,
+  actionHref,
 }: {
+  icon: ReactNode;
   title: string;
   description: string;
-  items: BreakdownItem[];
+  actionLabel: string;
+  actionHref: string;
 }) {
-  const total = items.reduce((sum, item) => sum + item.value, 0);
-
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center gap-2">
-          <BarChart3 className="h-5 w-5 text-slate-700" />
-          <CardTitle>{title}</CardTitle>
-        </div>
-        <CardDescription>{description}</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {items.map((item) => {
-          const percent = total > 0 ? Math.round((item.value / total) * 100) : 0;
-
-          return (
-            <div key={item.label}>
-              <div className="mb-2 flex items-center justify-between gap-3 text-sm">
-                <span className="font-medium text-slate-700">{item.label}</span>
-                <span className="text-muted-foreground">
-                  {item.value} ({percent}%)
-                </span>
-              </div>
-              <div className="h-2 rounded-full bg-slate-100">
-                <div
-                  className={`h-2 rounded-full ${item.barClassName}`}
-                  style={{ width: `${percent}%` }}
-                />
-              </div>
-            </div>
-          );
-        })}
-        {total === 0 ? (
-          <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-muted-foreground">
-            Run scope checks to populate this chart.
-          </p>
-        ) : null}
-      </CardContent>
-    </Card>
+    <div className="flex min-h-56 flex-col items-center justify-center px-6 py-10 text-center">
+      <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
+        {icon}
+      </div>
+      <h3 className="text-base font-semibold text-slate-950">{title}</h3>
+      <p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">
+        {description}
+      </p>
+      <Button asChild className="mt-5" size="sm">
+        <Link href={actionHref}>{actionLabel}</Link>
+      </Button>
+    </div>
   );
 }
 
-function TrendChart({
-  title,
-  description,
-  data,
-  barClassName,
-}: {
-  title: string;
-  description: string;
-  data: TrendPoint[];
-  barClassName: string;
-}) {
-  const maxValue = Math.max(...data.map((point) => point.value), 0);
+function NextActions({ data }: { data: DashboardData }) {
+  const creditAction =
+    data.creditsRemaining < 10
+      ? {
+          href: "/usage",
+          label: "Buy credits",
+          description: `${pluralize(
+            data.creditsRemaining,
+            "credit",
+          )} remaining. Add credits before the next review.`,
+          icon: CreditCard,
+          tone: "bg-amber-50 text-amber-700",
+        }
+        : {
+          href: "/usage",
+          label: "Review usage",
+          description: "Check credit spend and balance history.",
+          icon: Coins,
+          tone: "bg-slate-100 text-slate-700",
+        };
 
-  return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center gap-2">
-          <BarChart3 className="h-5 w-5 text-slate-700" />
-          <CardTitle>{title}</CardTitle>
-        </div>
-        <CardDescription>{description}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="flex h-36 items-end gap-2">
-          {data.map((point) => {
-            const height =
-              maxValue > 0 ? Math.max((point.value / maxValue) * 100, 8) : 0;
-
-            return (
-              <div
-                key={point.label}
-                className="flex min-w-0 flex-1 flex-col items-center gap-2"
-              >
-                <div className="flex h-24 w-full items-end rounded-md bg-slate-100">
-                  <div
-                    className={`w-full rounded-md ${barClassName}`}
-                    style={{ height: `${height}%` }}
-                    title={`${point.value} on ${point.label}`}
-                  />
-                </div>
-                <span className="text-xs text-muted-foreground">
-                  {point.label}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-        {maxValue === 0 ? (
-          <p className="mt-4 rounded-lg border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-muted-foreground">
-            No activity in the last seven days.
-          </p>
-        ) : null}
-      </CardContent>
-    </Card>
-  );
-}
-
-function ActionNeededPanel({ data }: { data: DashboardData }) {
-  const items = [
+  const actions = [
     {
-      show: data.creditsRemaining < 10,
-      title: "Low credits",
-      description: `${data.creditsRemaining} credits remaining. Add credits before the next busy client review.`,
-      href: "/usage",
-      label: "Buy credits",
-      icon: CreditCard,
-      className: "border-amber-200 bg-amber-50 text-amber-800",
+      href: "/projects/new",
+      label: "Create project",
+      description: "Save original scope, terms, and exclusions.",
+      icon: Plus,
+      tone: "bg-blue-50 text-blue-700",
     },
     {
-      show: data.highRiskRequests > 0,
-      title: "High-risk checks",
-      description: `${data.highRiskRequests} high-risk request${
-        data.highRiskRequests === 1 ? "" : "s"
-      } found across project history.`,
-      href: "/dashboard",
-      label: "Review table",
-      icon: AlertTriangle,
-      className: "border-red-200 bg-red-50 text-red-800",
-    },
-    {
-      show: data.projectsNotLocked > 0,
-      title: "Projects not locked",
-      description: `${data.projectsNotLocked} project${
-        data.projectsNotLocked === 1 ? "" : "s"
-      } cannot run AI checks until scope is locked.`,
       href: "/projects",
-      label: "View projects",
-      icon: FileLock2,
-      className: "border-blue-200 bg-blue-50 text-blue-800",
+      label: "Run scope check",
+      description:
+        data.totalProjects > 0
+          ? "Compare a client request against a locked scope."
+          : "Create and lock a project before checking requests.",
+      icon: MessageSquareText,
+      tone: "bg-emerald-50 text-emerald-700",
     },
-  ].filter((item) => item.show);
+    creditAction,
+  ];
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Action Needed</CardTitle>
-        <CardDescription>Operational signals that may need attention.</CardDescription>
+    <Card className={cardClassName}>
+      <CardHeader className="p-5 pb-3">
+        <CardTitle className="text-base">Next Actions</CardTitle>
+        <CardDescription>Practical steps to keep scope work moving.</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-3">
-        {items.length > 0 ? (
-          items.map((item) => (
-            <div
-              key={item.title}
-              className={`rounded-lg border p-4 ${item.className}`}
+      <CardContent className="p-0">
+        <div className="divide-y divide-slate-100">
+          {actions.map((action) => (
+            <Link
+              key={action.label}
+              href={action.href}
+              className="flex items-center justify-between gap-4 px-5 py-4 transition-colors hover:bg-slate-50"
             >
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div className="flex gap-3">
-                  <item.icon className="mt-0.5 h-5 w-5 shrink-0" />
-                  <div>
-                    <p className="font-semibold">{item.title}</p>
-                    <p className="mt-1 text-sm leading-6">{item.description}</p>
-                  </div>
-                </div>
-                <Button asChild size="sm" variant="outline" className="bg-white">
-                  <Link href={item.href}>
-                    {item.label}
-                    <ArrowRight />
-                  </Link>
-                </Button>
-              </div>
-            </div>
-          ))
-        ) : (
-          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-emerald-800">
-            <div className="flex gap-3">
-              <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" />
-              <div>
-                <p className="font-semibold">No urgent items</p>
-                <p className="mt-1 text-sm leading-6">
-                  Credits, locked projects, and high-risk checks look stable.
-                </p>
-              </div>
-            </div>
+              <span className="flex min-w-0 items-center gap-3">
+                <span
+                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${action.tone}`}
+                >
+                  <action.icon className="h-4 w-4" />
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-sm font-semibold text-slate-950">
+                    {action.label}
+                  </span>
+                  <span className="mt-1 block text-sm leading-5 text-muted-foreground">
+                    {action.description}
+                  </span>
+                </span>
+              </span>
+              <ArrowRight className="h-4 w-4 shrink-0 text-slate-400" />
+            </Link>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function RecentProjects({ projects }: { projects: RecentProject[] }) {
+  return (
+    <Card className={cardClassName}>
+      <CardHeader className="p-5 pb-3">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <CardTitle className="text-base">Recent Projects</CardTitle>
+            <CardDescription>Newest project scopes in this workspace.</CardDescription>
           </div>
+          <Button asChild variant="outline" size="sm" className="shrink-0">
+            <Link href="/projects">View All</Link>
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="p-0">
+        {projects.length > 0 ? (
+          <div className="divide-y divide-slate-100">
+            {projects.map((project) => (
+              <Link
+                key={project.id}
+                href={`/projects/${project.id}`}
+                className="flex items-center justify-between gap-4 px-5 py-4 transition-colors hover:bg-slate-50"
+              >
+                <span className="flex min-w-0 items-center gap-3">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+                    <FolderKanban className="h-4 w-4" />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-semibold text-slate-950">
+                      {project.name}
+                    </span>
+                    <span className="mt-1 block truncate text-sm text-muted-foreground">
+                      {project.clientName || formatDate(project.createdAt)}
+                    </span>
+                  </span>
+                </span>
+                <span className="flex shrink-0 flex-col items-end gap-2 sm:flex-row sm:items-center">
+                  <Badge variant={project.status}>
+                    {projectStatusLabel(project.status)}
+                  </Badge>
+                  <Badge
+                    className={
+                      project.scopeLocked
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                        : "border-amber-200 bg-amber-50 text-amber-700"
+                    }
+                  >
+                    {project.scopeLocked ? "Locked" : "Not locked"}
+                  </Badge>
+                </span>
+              </Link>
+            ))}
+          </div>
+        ) : (
+          <CompactEmptyState
+            icon={<FolderKanban className="h-5 w-5" />}
+            title="No projects yet"
+            description="Create a project to save scope terms and run AI checks against future requests."
+            actionLabel="Create Project"
+            actionHref="/projects/new"
+          />
         )}
       </CardContent>
     </Card>
   );
 }
 
-function QuickActions() {
-  const actions = [
-    {
-      href: "/projects/new",
-      label: "New Project",
-      description: "Save scope and client terms",
-      icon: Plus,
-    },
-    {
-      href: "/projects",
-      label: "Run Scope Check",
-      description: "Choose a locked project",
-      icon: MessageSquareText,
-    },
-    {
-      href: "/usage",
-      label: "Buy Credits",
-      description: "Add one-time packs",
-      icon: CreditCard,
-    },
-    {
-      href: "/usage",
-      label: "View Usage",
-      description: "Review spend this month",
-      icon: Coins,
-    },
-  ];
-
+function RecentChecks({ data }: { data: DashboardData }) {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Quick Actions</CardTitle>
-        <CardDescription>Common scope protection tasks.</CardDescription>
+    <Card className={cardClassName}>
+      <CardHeader className="p-5 pb-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <CardTitle className="text-base">Recent Scope Checks</CardTitle>
+            <CardDescription>
+              Latest AI decisions across your project history.
+            </CardDescription>
+          </div>
+          <Button asChild variant="outline" size="sm" className="shrink-0">
+            <Link href="/projects">
+              Run Scope Check
+              <ArrowRight />
+            </Link>
+          </Button>
+        </div>
       </CardHeader>
-      <CardContent className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {actions.map((action) => (
-          <Link
-            key={action.label}
-            href={action.href}
-            className="rounded-lg border border-slate-200 bg-slate-50 p-4 transition-colors hover:border-[#534AB7]/40 hover:bg-white"
-          >
-            <div className="flex items-center gap-3">
-              <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-white text-[#534AB7]">
-                <action.icon className="h-5 w-5" />
-              </span>
-              <span>
-                <span className="block text-sm font-semibold text-slate-950">
-                  {action.label}
-                </span>
-                <span className="mt-1 block text-xs text-muted-foreground">
-                  {action.description}
-                </span>
-              </span>
-            </div>
-          </Link>
-        ))}
+      <CardContent className="p-0">
+        {data.recentChecks.length > 0 ? (
+          <Table className="min-w-[820px]">
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead>Project</TableHead>
+                <TableHead>Request</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Risk</TableHead>
+                <TableHead>Hours</TableHead>
+                <TableHead>Date</TableHead>
+                <TableHead className="text-right">Result</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {data.recentChecks.map((check) => (
+                <TableRow key={check.id}>
+                  <TableCell>
+                    <Link
+                      href={`/checks/${check.id}`}
+                      className="font-medium text-slate-950 hover:text-primary"
+                    >
+                      {check.projectName}
+                    </Link>
+                  </TableCell>
+                  <TableCell className="max-w-[320px] text-muted-foreground">
+                    {truncate(check.clientRequest, 96)}
+                  </TableCell>
+                  <TableCell>
+                    <Badge className={scopeStatusClassName(check.scopeStatus)}>
+                      {scopeStatusLabel(check.scopeStatus)}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <Badge className={riskClassName(check.riskLevel)}>
+                      {riskLabel(check.riskLevel)}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {hoursLabel(check)}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {formatDate(check.createdAt)}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button asChild variant="ghost" size="sm">
+                      <Link href={`/checks/${check.id}`}>Open</Link>
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        ) : data.totalProjects === 0 ? (
+          <CompactEmptyState
+            icon={<FolderKanban className="h-5 w-5" />}
+            title="Create your first project"
+            description="Save the original scope and lock the agreement before running AI checks."
+            actionLabel="New Project"
+            actionHref="/projects/new"
+          />
+        ) : (
+          <CompactEmptyState
+            icon={<SearchX className="h-5 w-5" />}
+            title="No scope checks yet"
+            description="Choose a locked project and compare the next client request against saved scope."
+            actionLabel="Run Scope Check"
+            actionHref="/projects"
+          />
+        )}
       </CardContent>
     </Card>
   );
@@ -679,202 +741,86 @@ export default async function DashboardPage() {
   const data = await getDashboardData();
   const statItems: StatCardItem[] = [
     {
-      label: "Total projects",
-      value: data.totalProjects,
-      helper: `${data.projectsNotLocked} not locked`,
+      label: "Active projects",
+      value: data.activeProjects,
+      helper: `${pluralize(data.projectsNotLocked, "project")} not locked`,
       icon: FolderKanban,
-      tone: "purple",
-    },
-    {
-      label: "Checks this month",
-      value: data.checksThisMonth,
-      helper: "AI analyses run",
-      icon: SearchX,
       tone: "blue",
     },
     {
-      label: "Out-of-scope caught",
-      value: data.outOfScopeCaught,
-      helper: "all time",
-      icon: AlertTriangle,
-      tone: "amber",
+      label: "Total scope checks",
+      value: data.totalChecks,
+      helper: `${pluralize(data.checksThisMonth, "check")} this month`,
+      icon: SearchX,
+      tone: "slate",
     },
     {
       label: "Credits remaining",
       value: data.creditsRemaining,
-      helper: "available balance",
+      helper:
+        data.creditsRemaining < 10
+          ? "Low balance"
+          : "Available for scope checks",
       icon: Coins,
       tone: data.creditsRemaining < 10 ? "amber" : "green",
     },
     {
-      label: "High-risk requests",
+      label: "High-risk checks",
       value: data.highRiskRequests,
-      helper: "all time",
-      icon: Gauge,
+      helper:
+        data.highRiskRequests > 0
+          ? "Review recent risky requests"
+          : "No high-risk checks found",
+      icon: data.highRiskRequests > 0 ? AlertTriangle : Gauge,
       tone: data.highRiskRequests > 0 ? "red" : "slate",
-    },
-    {
-      label: "Estimated extra hours",
-      value: data.estimatedExtraHours,
-      helper: "upper estimate this month",
-      icon: Clock3,
-      tone: "slate",
     },
   ];
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    <div className="space-y-7">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <Badge variant="outline" className="mb-3 bg-white">
-            Scope operations
-          </Badge>
-          <h1 className="text-3xl font-bold tracking-normal text-slate-950">
+          <h1 className="text-2xl font-semibold tracking-normal text-slate-950">
             Dashboard
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Track project coverage, scope risk, credit usage, and recent AI
-            checks.
+          <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
+            Monitor project coverage, scope decisions, risk, and credit usage.
           </p>
         </div>
-        <Button asChild>
+        <Button asChild className="w-full sm:w-auto">
           <Link href="/projects/new">
             <Plus />
             New Project
           </Link>
         </Button>
-      </div>
+      </header>
 
       <StatsCards items={statItems} />
 
-      <div className="grid gap-6 xl:grid-cols-[1.35fr_0.65fr]">
-        <div className="space-y-6">
-          <QuickActions />
-          <div className="grid gap-6 lg:grid-cols-2">
-            <BreakdownChart
-              title="Scope Status Distribution"
-              description="Last 30 days of scope check outcomes."
-              items={data.scopeStatusDistribution}
-            />
-            <BreakdownChart
-              title="Risk Breakdown"
-              description="Last 30 days by AI-assigned risk."
-              items={data.riskBreakdown}
-            />
-            <TrendChart
-              title="Checks Over Time"
-              description="Daily checks across the last seven days."
-              data={data.checksTrend}
-              barClassName="bg-[#534AB7]"
-            />
-            <TrendChart
-              title="Credit Usage Trend"
-              description="Credits consumed by checks over the last seven days."
-              data={data.creditTrend}
-              barClassName="bg-emerald-500"
-            />
-          </div>
+      <DashboardCharts
+        scopeStatusData={data.scopeStatusDistribution}
+        riskLevelData={data.riskBreakdown}
+        creditUsageData={data.creditTrend}
+      />
+
+      <section
+        aria-labelledby="recent-activity-heading"
+        className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(340px,0.55fr)]"
+      >
+        <div className="space-y-3">
+          <h2
+            id="recent-activity-heading"
+            className="text-lg font-semibold text-slate-950"
+          >
+            Recent Activity
+          </h2>
+          <RecentChecks data={data} />
         </div>
-
-        <ActionNeededPanel data={data} />
-      </div>
-
-      <Card>
-        <CardHeader>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <CardTitle>Recent Checks</CardTitle>
-              <CardDescription>
-                Latest AI scope decisions across your project history.
-              </CardDescription>
-            </div>
-            <Button asChild variant="outline" size="sm">
-              <Link href="/projects">
-                Run Scope Check
-                <ArrowRight />
-              </Link>
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {data.recentChecks.length > 0 ? (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Project</TableHead>
-                  <TableHead>Request</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Risk</TableHead>
-                  <TableHead>Hours</TableHead>
-                  <TableHead>Date</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {data.recentChecks.map((check) => (
-                  <TableRow key={check.id} className="hover:bg-transparent">
-                    <TableCell colSpan={6} className="p-0">
-                      <Link
-                        href={`/checks/${check.id}`}
-                        className="grid gap-3 px-4 py-4 text-sm transition-colors hover:bg-slate-50 lg:grid-cols-[1fr_1.4fr_150px_110px_110px_120px] lg:items-center"
-                      >
-                        <span>
-                          <span className="block font-semibold text-slate-950">
-                            {check.projectName}
-                          </span>
-                          <span className="mt-1 block text-xs text-muted-foreground lg:hidden">
-                            {formatDate(check.createdAt)}
-                          </span>
-                        </span>
-                        <span className="text-muted-foreground">
-                          {truncate(check.clientRequest, 82)}
-                        </span>
-                        <span>
-                          <Badge
-                            className={scopeStatusClassName(check.scopeStatus)}
-                          >
-                            {scopeStatusLabel(check.scopeStatus)}
-                          </Badge>
-                        </span>
-                        <span>
-                          <Badge
-                            className={`capitalize ${riskClassName(
-                              check.riskLevel,
-                            )}`}
-                          >
-                            {check.riskLevel ?? "unknown"}
-                          </Badge>
-                        </span>
-                        <span className="text-muted-foreground">
-                          {hoursLabel(check)}
-                        </span>
-                        <span className="hidden text-muted-foreground lg:block">
-                          {formatDate(check.createdAt)}
-                        </span>
-                      </Link>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          ) : data.totalProjects === 0 ? (
-            <EmptyState
-              icon={<FolderKanban className="h-6 w-6" />}
-              title="Create your first project"
-              description="Save the original scope and lock the agreement before running AI checks."
-              actionLabel="New Project"
-              actionHref="/projects/new"
-            />
-          ) : (
-            <EmptyState
-              icon={<SearchX className="h-6 w-6" />}
-              title="No scope checks yet"
-              description="Choose a locked project and compare the next client request against the saved scope."
-              actionLabel="Run Scope Check"
-              actionHref="/projects"
-            />
-          )}
-        </CardContent>
-      </Card>
+        <div className="space-y-4 xl:pt-9">
+          <RecentProjects projects={data.recentProjects} />
+          <NextActions data={data} />
+        </div>
+      </section>
     </div>
   );
 }

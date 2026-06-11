@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ArrowRight, CreditCard, Loader2, PackagePlus } from "lucide-react";
 import { toast } from "sonner";
 
@@ -46,7 +46,17 @@ async function postBillingAction(url: string, body: object) {
 
 export function BillingActions({ creditPacks, setupIssues }: BillingActionsProps) {
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
-  const hasSetupIssues = setupIssues.length > 0;
+  const setupMessage = [
+    ...setupIssues,
+    ...creditPacks.flatMap((pack) => (pack.setupError ? [pack.setupError] : [])),
+  ].join(" ");
+  const hasGlobalSetupIssues = setupIssues.length > 0;
+
+  useEffect(() => {
+    if (setupMessage) {
+      toast.error(setupMessage);
+    }
+  }, [setupMessage]);
 
   async function handleCreditCheckout(itemKey: string) {
     const actionKey = `credits:${itemKey}` as PendingAction;
@@ -73,9 +83,7 @@ export function BillingActions({ creditPacks, setupIssues }: BillingActionsProps
               <CardTitle>Buy Credits</CardTitle>
             </div>
             <CardDescription className="mt-2">
-              {hasSetupIssues
-                ? setupIssues.join(" ")
-                : "One-time packs are added to your balance after the Stripe webhook succeeds."}
+              One-time packs are added to your balance after checkout completes.
             </CardDescription>
           </div>
           <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-600">
@@ -94,7 +102,9 @@ export function BillingActions({ creditPacks, setupIssues }: BillingActionsProps
               type="button"
               variant="outline"
               className="h-auto min-h-32 justify-between gap-4 rounded-lg border-slate-200 bg-white p-4 text-left hover:border-[#534AB7]/40 hover:bg-slate-50"
-              disabled={!pack.enabled || hasSetupIssues || pendingAction !== null}
+              disabled={
+                !pack.enabled || hasGlobalSetupIssues || pendingAction !== null
+              }
               onClick={() => handleCreditCheckout(pack.key)}
             >
               <span className="min-w-0">
@@ -105,13 +115,15 @@ export function BillingActions({ creditPacks, setupIssues }: BillingActionsProps
                   {pack.credits}
                 </span>
                 <span className="mt-1 block text-xs font-normal text-muted-foreground">
-                  {pack.setupError ?? `credits - ${pack.description}`}
+                  {pack.enabled
+                    ? `credits - ${pack.description}`
+                    : "Credit pack unavailable"}
                 </span>
               </span>
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#534AB7]/10 text-[#534AB7]">
                 {isPending ? (
                   <Loader2 className="animate-spin" />
-                ) : pack.enabled && !hasSetupIssues ? (
+                ) : pack.enabled && !hasGlobalSetupIssues ? (
                   <ArrowRight />
                 ) : (
                   <CreditCard />

@@ -1,7 +1,6 @@
 import Link from "next/link";
 import {
   BarChart3,
-  CheckCircle2,
   Coins,
   CreditCard,
   Gift,
@@ -21,6 +20,7 @@ import { createClient } from "@/lib/supabase/server";
 import { publicBillingOptions } from "@/lib/stripe/products";
 import type { Profile } from "@/types";
 import { BillingActions } from "@/components/billing/BillingActions";
+import { CheckoutStatusToast } from "@/components/billing/CheckoutStatusToast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -306,6 +306,8 @@ export default async function UsagePage({
 
   return (
     <div className="space-y-6">
+      <CheckoutStatusToast status={searchParams?.checkout} />
+
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <Badge variant="outline" className="mb-3 bg-white">
@@ -325,23 +327,6 @@ export default async function UsagePage({
           </Link>
         </Button>
       </div>
-
-      {searchParams?.checkout === "success" ? (
-        <div className="flex gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>
-            Checkout completed. Credits appear here after Stripe confirms
-            payment through the verified webhook.
-          </span>
-        </div>
-      ) : null}
-
-      {searchParams?.checkout === "cancelled" ? (
-        <div className="flex gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          <ReceiptText className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>Checkout was cancelled. No credits were added or charged.</span>
-        </div>
-      ) : null}
 
       <div className="grid gap-6 xl:grid-cols-[1.25fr_0.75fr]">
         <Card className="overflow-hidden">
@@ -427,15 +412,6 @@ export default async function UsagePage({
                 </span>
               </div>
             </div>
-            {billingSetupIssues.length > 0 ? (
-              <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-800">
-                {billingSetupIssues.join(" ")}
-              </p>
-            ) : (
-              <p className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
-                Stripe billing is configured.
-              </p>
-            )}
           </CardContent>
         </Card>
       </div>
