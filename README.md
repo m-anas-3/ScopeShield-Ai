@@ -15,6 +15,9 @@ ScopeShield AI is a Next.js 14 App Router MVP for freelancers and agencies to sa
 - Stripe Checkout for one-time credit packs.
 - Stripe webhooks for credit fulfillment.
 - Result pages with status, risk, hours, matched clauses, suggested action, professional reply, and change request summary.
+- Change Request Builder for out-of-scope checks with editable hours, rates, totals, owner status tracking, and client share links.
+- Public client approval/rejection links with token-only access and no login requirement.
+- Print-optimized change request reports for browser Print / Save PDF export.
 - Dashboard and usage pages for project counts, recent checks, and credits.
 
 ## Environment Variables
@@ -65,6 +68,7 @@ Apply migrations in timestamp order:
 10. `supabase/migrations/20260609191000_harden_profile_credit_fields.sql`
 11. `supabase/migrations/20260609192000_credit_ledger_and_analysis_idempotency.sql`
 12. `supabase/migrations/20260610120000_remove_subscription_billing.sql`
+13. `supabase/migrations/20260611110000_change_requests.sql`
 
 The credit hardening migration revokes direct authenticated access to `refund_credits` and adds `admin_refund_credits`, which is executable only by `service_role`.
 
@@ -79,6 +83,8 @@ The profile hardening migration keeps users from updating credit or billing fiel
 The subscription billing removal migration drops the old `profiles.plan` and subscription status columns, removes subscription credit grant artifacts, and keeps the schema focused on starter, monthly, purchased, spent, and refunded credits.
 
 The credit ledger and analysis idempotency migration adds `credit_ledger_entries` and `analysis_requests`, enables RLS on both, records future credit mutations from atomic RPCs, and adds indexes for dashboard, usage, and ledger lookups. `/api/analyze` requires an `Idempotency-Key` header so a double submit cannot burn credits or OpenAI calls twice.
+
+The change request migration adds `change_requests`, owner-only RLS, status and pricing constraints, project/check ownership validation, status timestamp triggers, unguessable public share tokens, and narrow public RPCs for client approval links. Public routes use the token RPCs instead of direct table reads, so clients can only see the specific shared request and client-safe project/check evidence.
 
 ## Stripe Credit Products
 
@@ -154,6 +160,13 @@ npm run db:diff
 17. For a free user created before the current UTC month, visit `/dashboard` or `/usage` and confirm one `monthly_credit_grants` row exists for the current month.
 18. Refresh `/dashboard` or `/usage` and confirm the current month does not create a second grant row or add another 10 credits.
 19. Temporarily lower `RATE_LIMIT_ANALYZE_PER_MINUTE` or `RATE_LIMIT_CHECKOUT_PER_MINUTE`, repeat requests, and confirm `429` responses include `Retry-After`.
+20. Run an out-of-scope check and click `Create Change Request` from the result page.
+21. Confirm the builder is prefilled with the project, client request, AI summary, estimated hours, and project hourly rate.
+22. Save the change request and confirm it appears under `/change-requests` and on the project detail page.
+23. Mark the request `sent`, copy the share link, and open `/approve/[token]` in a signed-out or private browser session.
+24. Approve or reject the request with a note and confirm the owner detail page shows the updated status and timestamp.
+25. Confirm rejected requests cannot be changed from the public link again, and approved requests can only be marked paid by the owner.
+26. Open the report route from the owner detail page or public approval page and use `Print / Save PDF`; confirm the printed report includes ScopeShield branding, project/client context, original request, scope evidence, hours/cost, and approval status.
 
 ## Security Notes
 
@@ -166,6 +179,9 @@ npm run db:diff
 - Stripe event IDs, Checkout session IDs, monthly grants, and analysis idempotency keys are stored to prevent duplicate credit grants or duplicate expensive work.
 - `/api/analyze` checks authenticated ownership, project lock/index state, input length, credits, rate limits, and idempotency before OpenAI calls.
 - Authenticated clients cannot directly update credit or billing fields on their profile.
+- Authenticated clients cannot directly insert/update/delete change requests through browser Supabase; owner mutations use server actions after user/project/check verification.
+- Public change request approval uses unguessable tokens and security-definer RPCs that return only client-safe fields for one matching token.
+- Public approval/rejection only updates requests currently in `sent` status.
 - AI instructions are sent as a system message; project/client text is treated as untrusted data.
 
 ## Test Coverage
@@ -180,3 +196,4 @@ Current focused tests cover:
 - Rate-limit behavior.
 - Analyze insufficient-credit and refund behavior.
 - Stripe one-time purchase and duplicate event webhook behavior.
+- Change request migration permissions, token RPC safety, validation, public response handling, and owner status transitions.

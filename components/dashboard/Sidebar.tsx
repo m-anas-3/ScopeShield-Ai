@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   BarChart3,
+  FileSignature,
   FolderKanban,
   LayoutDashboard,
   ShieldCheck,
@@ -14,6 +15,7 @@ import { cn } from "@/lib/utils";
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/projects", label: "Projects", icon: FolderKanban },
+  { href: "/change-requests", label: "Change Requests", icon: FileSignature },
   { href: "/usage", label: "Usage", icon: BarChart3 },
 ];
 

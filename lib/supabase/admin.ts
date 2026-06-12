@@ -69,6 +69,30 @@ type AnalysisRequestRow = {
   updated_at: string;
 };
 
+type ChangeRequestRow = {
+  id: string;
+  user_id: string;
+  project_id: string;
+  scope_check_id: string | null;
+  title: string;
+  summary: string;
+  client_message: string | null;
+  estimated_hours_min: number | null;
+  estimated_hours_max: number | null;
+  hourly_rate_snapshot: number | null;
+  fixed_price: number | null;
+  estimated_total: number | null;
+  currency: string;
+  status: "draft" | "sent" | "approved" | "rejected" | "paid";
+  public_share_token: string;
+  client_response_note: string | null;
+  approved_at: string | null;
+  rejected_at: string | null;
+  paid_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 type AdminDatabase = {
   public: {
     Tables: {
@@ -98,6 +122,19 @@ type AdminDatabase = {
           updated_at?: string;
         },
         Partial<AnalysisRequestRow>
+      >;
+      change_requests: Table<
+        ChangeRequestRow,
+        Omit<
+          ChangeRequestRow,
+          "id" | "public_share_token" | "created_at" | "updated_at"
+        > & {
+          id?: string;
+          public_share_token?: string;
+          created_at?: string;
+          updated_at?: string;
+        },
+        Partial<ChangeRequestRow>
       >;
     };
     Views: Record<string, never>;

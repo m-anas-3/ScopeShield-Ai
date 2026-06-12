@@ -13,14 +13,16 @@ export function formatDate(value: string) {
   }).format(new Date(value));
 }
 
-export function formatCurrency(value: number | null) {
+export function formatCurrency(value: number | null, currency = "USD") {
   if (value === null) {
     return "Not set";
   }
 
+  const currencyCode = /^[A-Z]{3}$/.test(currency) ? currency : "USD";
+
   return new Intl.NumberFormat("en-US", {
     style: "currency",
-    currency: "USD",
+    currency: currencyCode,
     maximumFractionDigits: 2,
   }).format(value);
 }

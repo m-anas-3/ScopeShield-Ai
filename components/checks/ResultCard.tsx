@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   Clock3,
   Copy,
+  FileSignature,
   FileSearch,
   MailCheck,
   MessageSquareText,
@@ -27,6 +28,11 @@ import {
 
 interface ResultCardProps {
   check: ScopeCheck;
+  changeRequest?: {
+    id: string;
+    title: string;
+    status: string;
+  } | null;
 }
 
 function CopyButton({ text }: { text: string }) {
@@ -139,7 +145,7 @@ function sourceLabel(value: string) {
     .join(" ");
 }
 
-export function ResultCard({ check }: ResultCardProps) {
+export function ResultCard({ check, changeRequest }: ResultCardProps) {
   const verdict = statusMeta(check.scope_status);
   const VerdictIcon = verdict.icon;
   const professionalReply = check.professional_reply ?? "";
@@ -330,7 +336,21 @@ export function ResultCard({ check }: ResultCardProps) {
                 <FileSearch className="h-5 w-5 text-slate-700" />
                 <CardTitle>Change Request Summary</CardTitle>
               </div>
-              <CopyButton text={changeRequestSummary} />
+              <div className="flex items-center gap-2">
+                <CopyButton text={changeRequestSummary} />
+                <Button asChild size="sm">
+                  <Link
+                    href={
+                      changeRequest
+                        ? `/change-requests/${changeRequest.id}`
+                        : `/checks/${check.id}/change-request/new`
+                    }
+                  >
+                    <FileSignature />
+                    {changeRequest ? "Open Change Request" : "Create Change Request"}
+                  </Link>
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               <div className="whitespace-pre-wrap rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-700">

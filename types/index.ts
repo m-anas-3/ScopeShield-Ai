@@ -1,6 +1,12 @@
 export type ScopeStatus = "in_scope" | "out_of_scope" | "needs_clarification";
 export type RiskLevel = "low" | "medium" | "high";
 export type ProjectStatus = "active" | "completed" | "archived";
+export type ChangeRequestStatus =
+  | "draft"
+  | "sent"
+  | "approved"
+  | "rejected"
+  | "paid";
 
 export interface Profile {
   id: string;
@@ -59,6 +65,30 @@ export interface ScopeCheck {
   tokens_output: number | null;
   credits_used: number;
   created_at: string;
+}
+
+export interface ChangeRequest {
+  id: string;
+  user_id: string;
+  project_id: string;
+  scope_check_id: string | null;
+  title: string;
+  summary: string;
+  client_message: string | null;
+  estimated_hours_min: number | null;
+  estimated_hours_max: number | null;
+  hourly_rate_snapshot: number | null;
+  fixed_price: number | null;
+  estimated_total: number | null;
+  currency: string;
+  status: ChangeRequestStatus;
+  public_share_token: string;
+  client_response_note: string | null;
+  approved_at: string | null;
+  rejected_at: string | null;
+  paid_at: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface AIAnalysisResult {

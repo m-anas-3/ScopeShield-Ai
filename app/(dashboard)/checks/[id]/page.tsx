@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 
+import { getChangeRequestForCheck } from "@/lib/change-requests/queries";
 import { createClient } from "@/lib/supabase/server";
 import type { MatchedClause, RiskLevel, ScopeCheck, ScopeStatus } from "@/types";
 import { ResultCard } from "@/components/checks/ResultCard";
@@ -132,6 +133,11 @@ export default async function CheckResultPage({ params }: CheckResultPageProps) 
     redirect("/dashboard");
   }
 
+  const changeRequest =
+    check.scope_status === "out_of_scope"
+      ? await getChangeRequestForCheck(check.id)
+      : null;
+
   return (
     <div className="mx-auto max-w-5xl space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -151,7 +157,7 @@ export default async function CheckResultPage({ params }: CheckResultPageProps) 
           Back to Project
         </Link>
       </div>
-      <ResultCard check={check} />
+      <ResultCard check={check} changeRequest={changeRequest} />
     </div>
   );
 }

@@ -1,10 +1,26 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ClipboardCheck, FileText, MessageSquareText } from "lucide-react";
+import {
+  ClipboardCheck,
+  FileSignature,
+  FileText,
+  MessageSquareText,
+} from "lucide-react";
 
+import {
+  changeRequestAmountLabel,
+  formatHoursRange as formatChangeRequestHours,
+} from "@/lib/change-requests/format";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/server";
-import type { Project, ProjectStatus, RiskLevel, ScopeStatus } from "@/types";
+import type {
+  ChangeRequestStatus,
+  Project,
+  ProjectStatus,
+  RiskLevel,
+  ScopeStatus,
+} from "@/types";
+import { ChangeRequestStatusBadge } from "@/components/change-requests/ChangeRequestStatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ProjectActions } from "@/components/projects/ProjectActions";
@@ -38,6 +54,19 @@ interface ProjectCheck {
   riskLevel: RiskLevel | null;
   estimatedHoursMin: number | null;
   estimatedHoursMax: number | null;
+  createdAt: string;
+}
+
+interface ProjectChangeRequest {
+  id: string;
+  title: string;
+  summary: string;
+  status: ChangeRequestStatus;
+  estimatedHoursMin: number | null;
+  estimatedHoursMax: number | null;
+  fixedPrice: number | null;
+  estimatedTotal: number | null;
+  currency: string;
   createdAt: string;
 }
 
@@ -199,6 +228,62 @@ async function getProjectChecks(projectId: string): Promise<ProjectCheck[]> {
   }
 }
 
+async function getProjectChangeRequests(
+  projectId: string,
+): Promise<ProjectChangeRequest[]> {
+  try {
+    const supabase = createClient();
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      return [];
+    }
+
+    const { data, error } = await supabase
+      .from("change_requests")
+      .select(
+        "id, title, summary, status, estimated_hours_min, estimated_hours_max, fixed_price, estimated_total, currency, created_at",
+      )
+      .eq("project_id", projectId)
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false });
+
+    if (error || !data) {
+      console.error("Project change requests lookup failed", error);
+      return [];
+    }
+
+    return data.map((request) => ({
+      id: String(request.id),
+      title: String(request.title),
+      summary: String(request.summary),
+      status: (request.status ?? "draft") as ChangeRequestStatus,
+      estimatedHoursMin:
+        request.estimated_hours_min === null
+          ? null
+          : Number(request.estimated_hours_min),
+      estimatedHoursMax:
+        request.estimated_hours_max === null
+          ? null
+          : Number(request.estimated_hours_max),
+      fixedPrice:
+        request.fixed_price === null ? null : Number(request.fixed_price),
+      estimatedTotal:
+        request.estimated_total === null
+          ? null
+          : Number(request.estimated_total),
+      currency: String(request.currency ?? "USD"),
+      createdAt: String(request.created_at),
+    }));
+  } catch (error) {
+    console.error("Project change requests lookup failed", error);
+    return [];
+  }
+}
+
 function ScopeCard({
   title,
   value,
@@ -230,6 +315,7 @@ export default async function ProjectDetailPage({
   }
 
   const checks = await getProjectChecks(params.id);
+  const changeRequests = await getProjectChangeRequests(params.id);
 
   return (
     <div className="space-y-6">
@@ -386,6 +472,81 @@ export default async function ProjectDetailPage({
               title="No checks for this project"
               description="Run a scope check to compare a client request against the saved project scope."
               actionLabel="Run First Check"
+              actionHref={`/projects/${project.id}/check`}
+            />
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <FileSignature className="h-5 w-5 text-[#534AB7]" />
+            <CardTitle>Change Requests</CardTitle>
+          </div>
+          <CardDescription>
+            Client-ready change requests created from scope checks.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {changeRequests.length > 0 ? (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Title</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Hours</TableHead>
+                  <TableHead>Total</TableHead>
+                  <TableHead>Date</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {changeRequests.map((request) => (
+                  <TableRow key={request.id} className="hover:bg-transparent">
+                    <TableCell colSpan={5} className="p-0">
+                      <Link
+                        href={`/change-requests/${request.id}`}
+                        className="grid gap-3 px-4 py-3 text-sm transition-colors hover:bg-slate-50 lg:grid-cols-[1.4fr_130px_110px_120px_120px] lg:items-center"
+                      >
+                        <span className="min-w-0">
+                          <span className="block truncate text-slate-950">
+                            {request.title}
+                          </span>
+                          <span className="mt-1 block truncate text-muted-foreground">
+                            {truncate(request.summary, 80)}
+                          </span>
+                        </span>
+                        <span>
+                          <ChangeRequestStatusBadge status={request.status} />
+                        </span>
+                        <span className="text-muted-foreground">
+                          {formatChangeRequestHours({
+                            estimated_hours_min: request.estimatedHoursMin,
+                            estimated_hours_max: request.estimatedHoursMax,
+                          })}
+                        </span>
+                        <span className="font-medium text-slate-950">
+                          {changeRequestAmountLabel({
+                            fixed_price: request.fixedPrice,
+                            estimated_total: request.estimatedTotal,
+                            currency: request.currency,
+                          })}
+                        </span>
+                        <span className="text-muted-foreground">
+                          {formatDate(request.createdAt)}
+                        </span>
+                      </Link>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
+            <EmptyState
+              icon={<FileSignature className="h-6 w-6" />}
+              title="No change requests yet"
+              description="Create one from an out-of-scope scope check result."
+              actionLabel="Run Scope Check"
               actionHref={`/projects/${project.id}/check`}
             />
           )}
